@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node:*)",
+      "Bash(ls:*)",
+      "Bash(node_modules/.bin/next:*)",
+      "Bash(npm run:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.prisma.io)",
+      "WebSearch",
+      "WebFetch(domain:www.buildwithmatija.com)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:www.prisma.io)",
+      "WebFetch(domain:jb.desishub.com)",
+      "WebFetch(domain:dev.to)",
+      "Bash(python:*)"
+    ]
+  }
+}
