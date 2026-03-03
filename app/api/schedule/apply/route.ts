@@ -29,23 +29,6 @@ function toDateTime(dateStr: string, timeStr: string): Date {
   return new Date(`${dateStr}T${timeStr}:00`);
 }
 
-// calendarEventId は JSON 配列（複数IDあり）または単一ID文字列で保存される。
-// どちらにも対応するためのパースヘルパー。
-//
-// 例:
-//   '["id1","id2"]'  → ["id1", "id2"]  （分割タスク）
-//   '"id1"'          → ["id1"]          （通常タスク、旧形式）
-//   'id1'            → ["id1"]          （さらに旧い形式）
-function parseEventIds(raw: string | null | undefined): string[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [raw];
-  } catch {
-    // JSON でなければ単一IDとして扱う
-    return [raw];
-  }
-}
 
 export async function POST(req: NextRequest) {
   // ── 認証チェック ──
@@ -73,57 +56,31 @@ export async function POST(req: NextRequest) {
   auth.setCredentials({ access_token: session.accessToken });
   const calendar = google.calendar({ version: "v3", auth });
 
-  // ── フェーズ1: 既存のカレンダーイベントをまとめて削除 ──
+  // ── フェーズ1: 対象日の俺秘書イベントをすべて削除 ──
   //
-  // 【なぜループの外で削除するのか？】
-  // 同じタスクが 9:00-10:00 と 14:00-15:00 の2ブロックに分割されている場合、
-  // ループ内で削除すると「1回目のループで作った 9:00-10:00 のイベント」を
-  // 「2回目のループが誤って削除」してしまう。
-  // → ループ前にまとめて削除することで、この問題を回避する。
-
-  // 1-a. 通常タスクの既存イベントを DB 経由で削除
-  // SLEEP_BLOCK は Task テーブルに存在しないので除外する
-  const uniqueTaskIds = [...new Set(schedule.map((i) => i.taskId))].filter((id) => id !== "SLEEP_BLOCK");
-
-  const tasksWithEvents = await prisma.task.findMany({
-    where: { id: { in: uniqueTaskIds }, calendarEventId: { not: null } },
-    select: { id: true, calendarEventId: true },
-  });
-
-  for (const task of tasksWithEvents) {
-    for (const eventId of parseEventIds(task.calendarEventId)) {
-      try {
-        await calendar.events.delete({ calendarId: "primary", eventId });
-      } catch {
-        // 手動削除済みなどの場合は無視して続行
-      }
-    }
-  }
-
-  // 1-b. 睡眠ブロックの既存イベントを Google Calendar から直接検索して削除
+  // イベント作成時に extendedProperties.private.source = "ore-hisyo" を付けているので、
+  // この目印で「俺秘書が追加したイベント全件」を検索できる。
   //
-  // SLEEP_BLOCK は DB に保存しないため、前回追加したイベントIDを追跡できない。
-  // 代わりに Google Calendar API の privateExtendedProperty フィルターを使い、
-  // 「source=ore-hisyo かつ taskId=SLEEP_BLOCK」のイベントを対象日から検索して削除する。
-  if (schedule.some((i) => i.taskId === "SLEEP_BLOCK")) {
-    // 対象日の 00:00〜翌日 00:00（UTC）を timeMin/timeMax に設定
+  // 旧方式（DBのcalendarEventIdを使う）では「今回のスケジュールに含まれるタスクの
+  // 旧イベント」しか削除できず、前回スケジュールにあって今回はないタスク・睡眠ブロック・
+  // 誤って追加された休憩イベントなどが残り続けてしまう。
+  // → 対象日の source=ore-hisyo を全削除してから新規追加することで、この問題を解決する。
+  {
     const dayStart = new Date(`${date}T00:00:00+09:00`);
     const dayEnd   = new Date(`${date}T23:59:59+09:00`);
-
     try {
-      const existingSleepRes = await calendar.events.list({
+      const existingRes = await calendar.events.list({
         calendarId: "primary",
         timeMin:    dayStart.toISOString(),
         timeMax:    dayEnd.toISOString(),
-        privateExtendedProperty: ["source=ore-hisyo", "taskId=SLEEP_BLOCK"],
+        privateExtendedProperty: ["source=ore-hisyo"],
       });
-
-      for (const event of existingSleepRes.data.items ?? []) {
+      for (const event of existingRes.data.items ?? []) {
         if (event.id) {
           try {
             await calendar.events.delete({ calendarId: "primary", eventId: event.id });
           } catch {
-            // 手動削除済みの場合は無視
+            // 手動削除済みなどの場合は無視して続行
           }
         }
       }

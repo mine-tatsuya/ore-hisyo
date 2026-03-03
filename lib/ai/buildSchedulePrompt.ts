@@ -19,7 +19,7 @@ interface TimedCalendarEvent {
 
 interface BuildPromptOptions {
   targetDate:  Date;
-  tasks:       Task[];               // PENDING + IN_PROGRESS のみ渡す
+  tasks:       Task[];               // IN_PROGRESS のみ渡す
   freeSlots:   FreeSlot[];
   settings:    Settings;
   recentLogs:  LogWithTask[];        // 過去の実績ログ（最大10件程度）
@@ -203,7 +203,7 @@ ${existingScheduleSection}
 ${freeSlotsLines}
 合計空き時間: ${totalFreeMinutes}分
 
-【対象日にやるべきタスク（未着手・進行中のみ）】
+【対象日にやるべきタスク（進行中のみ）】
 ${tasksLines || "  現在スケジュール可能なタスクはありません"}
 ${logsSection}
 
@@ -216,6 +216,7 @@ ${logsSection}
    進捗が遅れていれば多めに、余裕があれば少なめに今日の配分を調整する）
 - すべてのタスクが空き時間に収まらない場合は、期限が近くかつ進捗が遅れているタスクを優先して残りは省くこと
 - タスクとタスクの間に10〜15分の余白を設けること（脳の切り替え時間）
+- 休憩はスケジュールに含めないこと（タスクとタスクの間の空白時間が休憩を兼ねる。「休憩」というイベントをschedule配列に追加してはいけない）
 - 進行中のタスク（進捗あり）は、その進捗を考慮して残り時間を計算すること
 
 以下のJSON形式のみで返答してください（余計な説明文や\`\`\`は含めないこと）:

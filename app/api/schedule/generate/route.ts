@@ -71,12 +71,12 @@ export async function GET(req: NextRequest) {
       },
     }),
 
-    // ② 未着手・進行中タスクのみ（完了・キャンセルは除外）
+    // ② 進行中タスクのみ（未着手・完了・キャンセルは除外）
     //    優先度高 → 期限が近い順で並べてAIに渡す
     prisma.task.findMany({
       where: {
         userId,
-        status: { in: ["PENDING", "IN_PROGRESS"] },
+        status: "IN_PROGRESS",
       },
       orderBy: [
         { priority: "asc" },   // HIGH=1 < MEDIUM=2 < LOW=3 の辞書順になる
@@ -147,7 +147,7 @@ export async function GET(req: NextRequest) {
   // タスクがゼロ = 何もスケジュールするものがない
   if (tasks.length === 0) {
     return Response.json(
-      { error: "未着手・進行中のタスクがありません。タスクを追加してください。" },
+      { error: "進行中のタスクがありません。タスクを「進行中」に変更してからスケジュールを生成してください。" },
       { status: 400 }
     );
   }
