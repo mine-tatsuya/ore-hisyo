@@ -70,12 +70,19 @@ export async function GET(req: NextRequest) {
   // ---- レスポンス ----
   return Response.json({
     date: targetDate.toISOString().split("T")[0],
+    // 睡眠ブロック生成に必要な設定値をフロントへ渡す
+    settings: {
+      wakeUpTime: settings.wakeUpTime,
+      bedTime:    settings.bedTime,
+    },
     // 時間指定イベント（ISO文字列で返す。フロントで HH:MM に変換）
+    // isOreHisyo フラグにより、フロントでAI生成後に俺秘書イベントを非表示にできる
     timedEvents: timedEvents.map((e) => ({
-      id:    e.id,
-      title: e.title,
-      start: e.start.toISOString(),
-      end:   e.end.toISOString(),
+      id:         e.id,
+      title:      e.title,
+      start:      e.start.toISOString(),
+      end:        e.end.toISOString(),
+      isOreHisyo: e.isOreHisyo,
     })),
     // 終日イベント（時刻情報は不要なので title のみ）
     allDayEvents: allDayEvents.map((e) => ({

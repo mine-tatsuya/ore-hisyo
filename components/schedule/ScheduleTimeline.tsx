@@ -1,46 +1,51 @@
 "use client";
 
 // スケジュールのタイムライン表示
-// 1日を縦軸にして2種類のブロックを重ねて表示する：
-//   - Googleカレンダーの既存イベント（グレー）
-//   - AIが生成したスケジュール（カラフル）
+//
+// 責任: グリッドの描画・ブロックの配置のみ
+// ドラッグロジック → useDragSchedule.ts
+// ドラッグ可能なブロックの見た目 → DraggableBlock.tsx
 
 import type { ScheduleItem } from "@/app/api/schedule/generate/route";
+import { useDragSchedule } from "./useDragSchedule";
+import DraggableBlock from "./DraggableBlock";
 
-// Google Calendar の時間指定イベント（タイムライン上にグレーで表示）
-// schedule/page.tsx からもこの型を import して使う
+// Google Calendar の時間指定イベント（グレーで表示、ドラッグ不可）
 export interface CalendarEventBlock {
-  id:    string;
-  title: string;
-  start: string; // "HH:MM"
-  end:   string; // "HH:MM"
+  id:          string;
+  title:       string;
+  start:       string;  // "HH:MM"
+  end:         string;  // "HH:MM"
+  isOreHisyo?: boolean;
 }
 
 interface ScheduleTimelineProps {
-  schedule:        ScheduleItem[];         // AIが生成したスケジュール
-  calendarEvents?: CalendarEventBlock[];   // Googleカレンダーの既存イベント
-  workStart:       string; // "00:00"（タイムラインの開始時刻）
-  workEnd:         string; // "24:00"（タイムラインの終了時刻）
-  date:            string; // "2024-03-15"（カレンダー適用ボタン用）
-  onApply:         (schedule: ScheduleItem[]) => void;
-  isApplying:      boolean;
-  isApplied:       boolean;
+  schedule:         ScheduleItem[];
+  calendarEvents?:  CalendarEventBlock[];
+  workStart:        string; // "00:00"
+  workEnd:          string; // "24:00"
+  date:             string;
+  onApply:          (schedule: ScheduleItem[]) => void;
+  onScheduleChange?: (schedule: ScheduleItem[]) => void;
+  isApplying:       boolean;
+  isApplied:        boolean;
+  // AI生成済みかどうか（true のときだけ「カレンダーに追加」ボタンを表示）
+  hasAiSchedule?:   boolean;
 }
 
-// "HH:MM" → 分数に変換
-// 例: "09:30" → 570, "24:00" → 1440
+// "HH:MM" → 分数
 function toMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;
 }
 
-// AIスケジュールブロックの色（インデックスでローテーション）
+// AIブロックの色（インデックスでローテーション）
 const BLOCK_COLORS = [
-  { bg: "bg-[#0052FF]",   text: "text-white",     },
-  { bg: "bg-violet-500",  text: "text-white",     },
-  { bg: "bg-emerald-500", text: "text-white",     },
-  { bg: "bg-amber-400",   text: "text-amber-900", },
-  { bg: "bg-rose-500",    text: "text-white",     },
+  { bg: "bg-[#0052FF]",   text: "text-white"     },
+  { bg: "bg-violet-500",  text: "text-white"     },
+  { bg: "bg-emerald-500", text: "text-white"     },
+  { bg: "bg-amber-400",   text: "text-amber-900" },
+  { bg: "bg-rose-500",    text: "text-white"     },
 ];
 
 export default function ScheduleTimeline({
@@ -50,36 +55,45 @@ export default function ScheduleTimeline({
   workEnd,
   date,
   onApply,
+  onScheduleChange,
   isApplying,
   isApplied,
+  hasAiSchedule = false,
 }: ScheduleTimelineProps) {
-  const workStartMin = toMinutes(workStart); // 00:00 → 0
-  const workEndMin   = toMinutes(workEnd);   // 24:00 → 1440
+  const workStartMin = toMinutes(workStart); // 0
+  const workEndMin   = toMinutes(workEnd);   // 1440
   const totalMinutes = workEndMin - workStartMin;
 
-  // 時間マーカーを1時間ごとに生成（0, 1, 2, ..., 24）
+  // ドラッグロジックをカスタムフックに委譲
+  const { localSchedule, containerRef, isDragging, handleDragStart, selectedIdx, handleDelete } = useDragSchedule({
+    schedule,
+    workStartMin,
+    workEndMin,
+    totalMinutes,
+    onScheduleChange,
+  });
+
+  // 時間マーカー（0, 1, 2, ..., 24）
   const startHour = Math.ceil(workStartMin / 60);
   const endHour   = Math.floor(workEndMin  / 60);
   const hourMarkers: number[] = [];
-  for (let h = startHour; h <= endHour; h++) {
-    hourMarkers.push(h);
-  }
+  for (let h = startHour; h <= endHour; h++) hourMarkers.push(h);
 
-  // タイムライン全体の高さ: 24h × 42px = 1008px
+  // タイムライン高さ: 24h × 42px = 1008px
   const PX_PER_HOUR    = 42;
   const timelineHeight = (totalMinutes / 60) * PX_PER_HOUR;
 
   return (
     <div className="space-y-4">
 
-      {/* カレンダー適用ボタン（AIスケジュールが生成されている場合のみ表示）*/}
-      {schedule.length > 0 && (
+      {/* カレンダー追加ボタン（AI生成後のみ表示）*/}
+      {hasAiSchedule && (
         <div className="flex items-center justify-between">
           <p className="text-xs text-slate-500">
-            {schedule.length} 件のタスクをスケジュール
+            {localSchedule.length} 件のタスクをスケジュール
           </p>
           <button
-            onClick={() => onApply(schedule)}
+            onClick={() => onApply(localSchedule)}
             disabled={isApplying || isApplied}
             className={`
               flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-xl
@@ -90,24 +104,24 @@ export default function ScheduleTimeline({
               }
             `}
           >
-            {isApplied   ? "✓ カレンダーに追加済み" :
-             isApplying  ? "追加中..."              :
-                           "📅 Googleカレンダーに追加"}
+            {isApplied  ? "✓ カレンダーに追加済み" :
+             isApplying ? "追加中..."              :
+                          "📅 Googleカレンダーに追加"}
           </button>
         </div>
       )}
 
-      {/* 凡例（カレンダーイベントが1件以上あるときのみ表示）*/}
+      {/* 凡例 */}
       {calendarEvents.length > 0 && (
         <div className="flex items-center gap-3 text-[10px] text-slate-400">
           <span className="flex items-center gap-1">
             <span className="inline-block w-3 h-3 rounded bg-slate-200" />
             Googleカレンダーの予定
           </span>
-          {schedule.length > 0 && (
+          {localSchedule.length > 0 && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-3 h-3 rounded bg-[#0052FF]" />
-              AIが提案したスケジュール
+              AIが提案したスケジュール（ドラッグで調整可）
             </span>
           )}
         </div>
@@ -136,8 +150,10 @@ export default function ScheduleTimeline({
         </div>
 
         {/* 右側：グリッド + ブロック */}
+        {/* containerRef をここに付けることで useDragSchedule がコンテナ高さを取得できる */}
         <div
-          className="relative flex-1 border-l border-slate-200"
+          ref={containerRef}
+          className={`relative flex-1 border-l border-slate-200 ${isDragging ? "cursor-grabbing" : ""}`}
           style={{ height: timelineHeight }}
         >
           {/* 時間グリッド線 */}
@@ -152,12 +168,10 @@ export default function ScheduleTimeline({
             );
           })}
 
-          {/* ── Googleカレンダーの既存イベント（グレーブロック）── */}
+          {/* Googleカレンダーの既存イベント（グレー・ドラッグ不可）*/}
           {calendarEvents.map((event) => {
             const eventStartMin = toMinutes(event.start);
             const eventEndMin   = toMinutes(event.end);
-
-            // タイムライン範囲外のイベントはスキップ
             if (eventEndMin <= workStartMin || eventStartMin >= workEndMin) return null;
 
             const topPct      = ((eventStartMin - workStartMin) / totalMinutes) * 100;
@@ -172,9 +186,7 @@ export default function ScheduleTimeline({
                 style={{ top: `${topPct}%`, height: `${heightPct}%` }}
                 title={event.title}
               >
-                <p className="text-[11px] font-bold leading-tight truncate">
-                  {event.title}
-                </p>
+                <p className="text-[11px] font-bold leading-tight truncate">{event.title}</p>
                 {durationMin >= 20 && (
                   <p className="text-[10px] mt-0.5 opacity-70">
                     {event.start}〜{event.end}（{durationMin}分）
@@ -184,39 +196,34 @@ export default function ScheduleTimeline({
             );
           })}
 
-          {/* ── AIが生成したスケジュールブロック ── */}
-          {schedule.map((item, idx) => {
+          {/* AIが生成したスケジュールブロック（カラフル・ドラッグ可能）*/}
+          {localSchedule.map((item, idx) => {
             const itemStartMin = toMinutes(item.start);
             const itemEndMin   = toMinutes(item.end);
             const topPct       = ((itemStartMin - workStartMin) / totalMinutes) * 100;
             const heightPct    = ((itemEndMin   - itemStartMin) / totalMinutes) * 100;
-            const color        = BLOCK_COLORS[idx % BLOCK_COLORS.length];
-            const durationMin  = itemEndMin - itemStartMin;
+            // 追加済みなら全ブロックを薄灰色に統一（「適用完了」を視覚的に示す）
+            // 未適用なら: 睡眠ブロック=中間グレー、それ以外=カラーローテーション
+            const color = isApplied
+              ? { bg: "bg-slate-200", text: "text-slate-400" }
+              : item.taskId === "SLEEP_BLOCK"
+                ? { bg: "bg-slate-400", text: "text-white" }
+                : BLOCK_COLORS[idx % BLOCK_COLORS.length];
 
             return (
-              <div
-                key={`${item.taskId}-${item.start}`}
-                className={`
-                  absolute left-2 right-2 rounded-xl px-3 py-2 overflow-hidden
-                  ${color.bg} ${color.text}
-                  shadow-sm transition-all hover:shadow-md hover:scale-[1.01]
-                  cursor-default
-                `}
-                style={{ top: `${topPct}%`, height: `${heightPct}%` }}
-                title={item.note}
-              >
-                <p className="text-[11px] font-bold leading-tight truncate">
-                  {item.title}
-                </p>
-                <p className="text-[10px] mt-0.5 opacity-80">
-                  {item.start}〜{item.end}（{durationMin}分）
-                </p>
-                {durationMin >= 45 && (
-                  <p className="text-[10px] mt-1 opacity-70 line-clamp-2 leading-relaxed">
-                    {item.note}
-                  </p>
-                )}
-              </div>
+              <DraggableBlock
+                key={`${item.taskId}-${idx}`}
+                item={item}
+                idx={idx}
+                topPct={topPct}
+                heightPct={heightPct}
+                color={color}
+                isDragging={isDragging}
+                isSelected={selectedIdx === idx}
+                isApplied={isApplied}
+                onDragStart={handleDragStart}
+                onDelete={handleDelete}
+              />
             );
           })}
         </div>

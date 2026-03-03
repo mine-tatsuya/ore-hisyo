@@ -5,11 +5,12 @@ import { google } from "googleapis";
 
 // カレンダーイベントの型定義（APIレスポンスから必要な部分だけ抜き出す）
 export interface CalendarEvent {
-  id:       string;
-  title:    string;
-  start:    Date;   // 開始日時
-  end:      Date;   // 終了日時
-  isAllDay: boolean; // 終日イベントかどうか
+  id:         string;
+  title:      string;
+  start:      Date;    // 開始日時
+  end:        Date;    // 終了日時
+  isAllDay:   boolean; // 終日イベントかどうか
+  isOreHisyo: boolean; // 俺秘書が追加したイベントかどうか（空き時間計算から除外するため）
 }
 
 /**
@@ -54,9 +55,6 @@ export async function getCalendarEvents(
 
     // APIレスポンスを扱いやすい形に変換する
     return items
-      // 俺秘書が追加したイベントは除外する（二重ブロック防止）
-      // apply/route.ts で extendedProperties.private.source = "ore-hisyo" を付けている
-      .filter((item) => item.extendedProperties?.private?.["source"] !== "ore-hisyo")
       .map((item) => {
         // 終日イベントは start.date、時刻指定イベントは start.dateTime が入っている
         const isAllDay = Boolean(item.start?.date && !item.start?.dateTime);
@@ -68,12 +66,17 @@ export async function getCalendarEvents(
         const start = new Date(startRaw);
         const end   = new Date(endRaw);
 
+        // 俺秘書が追加したイベントかどうかを判定
+        // apply/route.ts で extendedProperties.private.source = "ore-hisyo" を付けている
+        const isOreHisyo = item.extendedProperties?.private?.["source"] === "ore-hisyo";
+
         return {
-          id:       item.id      ?? "",
-          title:    item.summary ?? "（タイトルなし）",
+          id:    item.id      ?? "",
+          title: item.summary ?? "（タイトルなし）",
           start,
           end,
           isAllDay,
+          isOreHisyo,
         };
       })
       // 日時の変換に失敗したものを除外（Invalid Date 対策）

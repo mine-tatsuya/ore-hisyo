@@ -102,6 +102,12 @@ export function getFreeSlots(
       // → スキップ
       continue;
     }
+    if (event.isOreHisyo) {
+      // 俺秘書が追加した📌イベントは空き時間計算から除外する。
+      // これにより、スケジュールを再生成するとき前回の計画が「埋まっている」扱いにならない。
+      // （表示はするが、AIへの入力には含めない）
+      continue;
+    }
     blocked.push({ start: event.start, end: event.end });
   }
 

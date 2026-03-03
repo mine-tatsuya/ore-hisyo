@@ -134,21 +134,21 @@ ${logLines.join("\n")}`;
   }
 
   // ── プロンプト本文 ──
-  return `あなたは個人スケジュール管理AIです。以下の情報をもとに、今日の最適なスケジュールを提案してください。
+  return `あなたは個人スケジュール管理AIです。以下の情報をもとに、対象日の最適なスケジュールを提案してください。
 
 【基本情報】
-- 今日の日付: ${dateStr}
+- 対象日: ${dateStr}
 - 作業時間: ${settings.wakeUpTime}〜${settings.bedTime}
 - 昼休み: ${settings.lunchStart}〜${settings.lunchEnd}
 - AIモード: ${personalityDesc}
 ${focusSection ? focusSection + "\n" : ""}${customSection}
 
-【今日の空き時間】
+【対象日の空き時間】
 ※ Google Calendarの既存予定を除いた、タスクを入れられる時間帯です
 ${freeSlotsLines}
 合計空き時間: ${totalFreeMinutes}分
 
-【今日やるべきタスク（未着手・進行中のみ）】
+【対象日にやるべきタスク（未着手・進行中のみ）】
 ${tasksLines || "  現在スケジュール可能なタスクはありません"}
 ${logsSection}
 

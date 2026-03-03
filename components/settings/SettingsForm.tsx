@@ -64,6 +64,7 @@ export default function SettingsForm({ initialSettings }: SettingsFormProps) {
   // 現在の選択値をリアルタイムに取得（ボタンの選択状態表示に使う）
   const watchPersonality  = watch("aiPersonality");
   const watchCalendarMode = watch("calendarMode");
+  const watchBedTime      = watch("bedTime");
 
   // ---- フォーム送信処理 ----
   const onSubmit = async (data: FormData) => {
@@ -158,7 +159,47 @@ export default function SettingsForm({ initialSettings }: SettingsFormProps) {
         <div className="space-y-4">
           <div className="flex flex-wrap gap-6">
             <TimeField label="起床時間" fieldName="wakeUpTime" />
-            <TimeField label="就寝時間" fieldName="bedTime" />
+
+            {/* 就寝時間 — "24:00以降" ボタン付き特別フィールド */}
+            <div className="space-y-1">
+              <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                就寝時間
+              </Label>
+              {watchBedTime === "24:00" ? (
+                /* "24:00以降" 選択中: バッジ表示 + 解除リンク */
+                <div className="flex items-center gap-2">
+                  <div className="bg-slate-700 text-white text-sm px-3 py-2 rounded-lg w-32 text-center">
+                    深夜0時以降
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setValue("bedTime", "23:00", { shouldDirty: true })}
+                    className="text-[11px] text-slate-400 hover:text-slate-600 underline"
+                  >
+                    時間を指定
+                  </button>
+                </div>
+              ) : (
+                /* 通常: 時刻ピッカー + "24:00以降" ボタン */
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="time"
+                    {...register("bedTime")}
+                    className="bg-slate-50 border-slate-200 text-sm w-32"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setValue("bedTime", "24:00", { shouldDirty: true })}
+                    className="text-[11px] text-[#0052FF] hover:bg-blue-50 px-2 py-1 rounded-lg transition-colors"
+                  >
+                    24:00以降
+                  </button>
+                </div>
+              )}
+              {errors.bedTime && (
+                <p className="text-xs text-rose-600">{errors.bedTime.message}</p>
+              )}
+            </div>
           </div>
 
           {/* 昼休み */}

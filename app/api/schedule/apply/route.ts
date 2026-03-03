@@ -80,7 +80,10 @@ export async function POST(req: NextRequest) {
   // ループ内で削除すると「1回目のループで作った 9:00-10:00 のイベント」を
   // 「2回目のループが誤って削除」してしまう。
   // → ループ前にまとめて削除することで、この問題を回避する。
-  const uniqueTaskIds = [...new Set(schedule.map((i) => i.taskId))];
+
+  // 1-a. 通常タスクの既存イベントを DB 経由で削除
+  // SLEEP_BLOCK は Task テーブルに存在しないので除外する
+  const uniqueTaskIds = [...new Set(schedule.map((i) => i.taskId))].filter((id) => id !== "SLEEP_BLOCK");
 
   const tasksWithEvents = await prisma.task.findMany({
     where: { id: { in: uniqueTaskIds }, calendarEventId: { not: null } },
@@ -94,6 +97,38 @@ export async function POST(req: NextRequest) {
       } catch {
         // 手動削除済みなどの場合は無視して続行
       }
+    }
+  }
+
+  // 1-b. 睡眠ブロックの既存イベントを Google Calendar から直接検索して削除
+  //
+  // SLEEP_BLOCK は DB に保存しないため、前回追加したイベントIDを追跡できない。
+  // 代わりに Google Calendar API の privateExtendedProperty フィルターを使い、
+  // 「source=ore-hisyo かつ taskId=SLEEP_BLOCK」のイベントを対象日から検索して削除する。
+  if (schedule.some((i) => i.taskId === "SLEEP_BLOCK")) {
+    // 対象日の 00:00〜翌日 00:00（UTC）を timeMin/timeMax に設定
+    const dayStart = new Date(`${date}T00:00:00+09:00`);
+    const dayEnd   = new Date(`${date}T23:59:59+09:00`);
+
+    try {
+      const existingSleepRes = await calendar.events.list({
+        calendarId: "primary",
+        timeMin:    dayStart.toISOString(),
+        timeMax:    dayEnd.toISOString(),
+        privateExtendedProperty: ["source=ore-hisyo", "taskId=SLEEP_BLOCK"],
+      });
+
+      for (const event of existingSleepRes.data.items ?? []) {
+        if (event.id) {
+          try {
+            await calendar.events.delete({ calendarId: "primary", eventId: event.id });
+          } catch {
+            // 手動削除済みの場合は無視
+          }
+        }
+      }
+    } catch {
+      // 検索失敗時は無視して続行（重複が残るより追加を優先）
     }
   }
 
@@ -128,42 +163,45 @@ export async function POST(req: NextRequest) {
       const calendarEventId = event.data.id ?? "";
       const plannedMinutes  = Math.round((endDt.getTime() - startDt.getTime()) / 60_000);
 
-      // このタスクのイベントIDリストに追加（分割タスク対応）
-      const ids = taskEventIds.get(item.taskId) ?? [];
-      ids.push(calendarEventId);
-      taskEventIds.set(item.taskId, ids);
+      // SLEEP_BLOCK は Task/Log テーブルに存在しないので DB 操作をスキップ
+      if (item.taskId !== "SLEEP_BLOCK") {
+        // このタスクのイベントIDリストに追加（分割タスク対応）
+        const ids = taskEventIds.get(item.taskId) ?? [];
+        ids.push(calendarEventId);
+        taskEventIds.set(item.taskId, ids);
 
-      // ── Task テーブルを更新 ──
-      // calendarEventId は JSON 配列で保存（複数ブロック対応）
-      // 例: '["event1","event2"]'
-      await prisma.task.update({
-        where: { id: item.taskId },
-        data: {
-          scheduledStart:  startDt,
-          scheduledEnd:    endDt,
-          calendarEventId: JSON.stringify(taskEventIds.get(item.taskId)),
-          status: "IN_PROGRESS",
-        },
-      });
+        // ── Task テーブルを更新 ──
+        // calendarEventId は JSON 配列で保存（複数ブロック対応）
+        // 例: '["event1","event2"]'
+        await prisma.task.update({
+          where: { id: item.taskId },
+          data: {
+            scheduledStart:  startDt,
+            scheduledEnd:    endDt,
+            calendarEventId: JSON.stringify(taskEventIds.get(item.taskId)),
+            status: "IN_PROGRESS",
+          },
+        });
 
-      // ── Log レコードを作成（今日分の重複は削除してから再作成）──
-      const todayStart = new Date(date);
-      todayStart.setHours(0, 0, 0, 0);
-      await prisma.log.deleteMany({
-        where: {
-          taskId:       item.taskId,
-          plannedStart: { gte: todayStart },
-        },
-      });
-      await prisma.log.create({
-        data: {
-          userId,
-          taskId:         item.taskId,
-          plannedStart:   startDt,
-          plannedEnd:     endDt,
-          plannedMinutes: plannedMinutes,
-        },
-      });
+        // ── Log レコードを作成（今日分の重複は削除してから再作成）──
+        const todayStart = new Date(date);
+        todayStart.setHours(0, 0, 0, 0);
+        await prisma.log.deleteMany({
+          where: {
+            taskId:       item.taskId,
+            plannedStart: { gte: todayStart },
+          },
+        });
+        await prisma.log.create({
+          data: {
+            userId,
+            taskId:         item.taskId,
+            plannedStart:   startDt,
+            plannedEnd:     endDt,
+            plannedMinutes: plannedMinutes,
+          },
+        });
+      }
 
       appliedItems.push({ taskId: item.taskId, calendarEventId });
 
