@@ -153,12 +153,17 @@ export async function GET(req: NextRequest) {
   }
 
   // ── プロンプト組み立て ──
+  // 時間指定イベントのうち「俺秘書が追加したもの以外」をAIに渡す
+  // （終日イベント・自分が入れた📌イベントはAIの参考情報として不要なので除外）
+  const timedEvents = calendarEvents.filter((e) => !e.isAllDay && !e.isOreHisyo);
+
   const prompt = buildSchedulePrompt({
     targetDate,
     tasks,
     freeSlots,
     settings,
     recentLogs,
+    timedEvents,
   });
 
   // ── Gemini API 呼び出し ──

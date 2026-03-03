@@ -10,12 +10,20 @@ import type { FreeSlot } from "@/lib/calendar/getFreeSlots";
 // recentLogs には task.title を JOIN して取得する
 type LogWithTask = Log & { task: { title: string } };
 
+// Google Calendar の時間指定イベント（ore-hisyo・終日イベント除外後）
+interface TimedCalendarEvent {
+  title: string;
+  start: Date;
+  end:   Date;
+}
+
 interface BuildPromptOptions {
   targetDate:  Date;
-  tasks:       Task[];        // PENDING + IN_PROGRESS のみ渡す
+  tasks:       Task[];               // PENDING + IN_PROGRESS のみ渡す
   freeSlots:   FreeSlot[];
   settings:    Settings;
-  recentLogs:  LogWithTask[]; // 過去の実績ログ（最大10件程度）
+  recentLogs:  LogWithTask[];        // 過去の実績ログ（最大10件程度）
+  timedEvents?: TimedCalendarEvent[]; // Google Calendar の既存予定
 }
 
 /**
@@ -38,6 +46,7 @@ export function buildSchedulePrompt({
   freeSlots,
   settings,
   recentLogs,
+  timedEvents = [],
 }: BuildPromptOptions): string {
 
   // ── 今日の日付（曜日付き日本語形式）──
@@ -66,6 +75,52 @@ export function buildSchedulePrompt({
   const customSection = settings.aiCustomPrompt
     ? `\n【ユーザーからの追加指示】\n${settings.aiCustomPrompt}`
     : "";
+
+  // ── 既存スケジュールの箇条書き ──
+  //
+  // 「今日の1日がどのような構造か」をAIに伝える。
+  // 設定から取得した睡眠・昼休みと、Google Calendar の実際の予定を合わせて渡す。
+  // （睡眠は Google Calendar には存在しないが、設定値から組み立てて渡す）
+
+  // "HH:MM" → 分数（時刻順ソート用）
+  const hhmm2min = (hhmm: string) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return h * 60 + m;
+  };
+
+  const existingItems: { startMin: number; line: string }[] = [];
+
+  // 起床前の睡眠（00:00〜wakeUpTime）
+  if (settings.wakeUpTime > "00:00") {
+    existingItems.push({ startMin: 0, line: `  - 00:00〜${settings.wakeUpTime}: 💤 睡眠` });
+  }
+  // 昼休み（設定から）
+  existingItems.push({
+    startMin: hhmm2min(settings.lunchStart),
+    line: `  - ${settings.lunchStart}〜${settings.lunchEnd}: 昼休み`,
+  });
+  // 就寝後の睡眠（bedTime〜24:00）※ 24:00以降設定のときは追加しない
+  if (settings.bedTime < "24:00") {
+    existingItems.push({
+      startMin: hhmm2min(settings.bedTime),
+      line: `  - ${settings.bedTime}〜24:00: 💤 睡眠`,
+    });
+  }
+  // Google Calendar の時間指定イベント
+  for (const e of timedEvents) {
+    existingItems.push({
+      startMin: e.start.getHours() * 60 + e.start.getMinutes(),
+      line: `  - ${toHHMM(e.start)}〜${toHHMM(e.end)}: ${e.title}`,
+    });
+  }
+
+  // 開始時刻順に並べる
+  existingItems.sort((a, b) => a.startMin - b.startMin);
+
+  const existingScheduleSection =
+    `\n【対象日の既存スケジュール】\n` +
+    `※ 以下はすでに埋まっている時間です。睡眠・昼休みは設定から、それ以外はGoogleカレンダーから取得しています\n` +
+    existingItems.map((i) => i.line).join("\n") + "\n";
 
   // ── 空き時間の箇条書き ──
   const totalFreeMinutes = Math.round(
@@ -142,7 +197,7 @@ ${logLines.join("\n")}`;
 - 昼休み: ${settings.lunchStart}〜${settings.lunchEnd}
 - AIモード: ${personalityDesc}
 ${focusSection ? focusSection + "\n" : ""}${customSection}
-
+${existingScheduleSection}
 【対象日の空き時間】
 ※ Google Calendarの既存予定を除いた、タスクを入れられる時間帯です
 ${freeSlotsLines}
@@ -154,10 +209,12 @@ ${logsSection}
 
 【スケジュール作成のルール】
 - 空き時間の範囲内でのみスケジュールを組むこと（既存予定と絶対に重複させないこと）
-- 優先度「高」と期限が今日のタスクを最優先で早い時間に配置すること
 - 集中タイムがある場合は、その時間帯に最重要タスクを入れること
 - 過去の実績から所要時間が多い傾向があれば、推定時間より余裕を持たせること
-- すべてのタスクが空き時間に収まらない場合は、優先度順に選んで残りは省くこと
+- タスクの期限と現在の進捗率から逆算して、期限に間に合うよう今日の割り当て時間を調整すること
+  （例：期限が3日後・進捗30%なら残り70%を3日で割ると今日は約23%分が目安。
+   進捗が遅れていれば多めに、余裕があれば少なめに今日の配分を調整する）
+- すべてのタスクが空き時間に収まらない場合は、期限が近くかつ進捗が遅れているタスクを優先して残りは省くこと
 - タスクとタスクの間に10〜15分の余白を設けること（脳の切り替え時間）
 - 進行中のタスク（進捗あり）は、その進捗を考慮して残り時間を計算すること
 
