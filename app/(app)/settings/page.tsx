@@ -1,16 +1,50 @@
-// 設定ページ（Step 4 で本実装予定）
-import { Settings } from "lucide-react";
+// 設定ページ
+// サーバーコンポーネント：Prisma から直接設定を取得して SettingsForm に渡す
 
-export default function SettingsPage() {
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { prisma } from "@/lib/prisma";
+import { redirect } from "next/navigation";
+import SettingsForm from "@/components/settings/SettingsForm";
+
+export default async function SettingsPage() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) redirect("/signin");
+
+  const userId = session.user.id;
+
+  // 設定を取得。なければデフォルト値で自動作成（APIと同じ upsert パターン）
+  // サーバーコンポーネントなので Prisma を直接呼べる（APIを経由しなくてよい）
+  const settings = await prisma.settings.upsert({
+    where:  { userId },
+    update: {},
+    create: {
+      userId,
+      wakeUpTime:    "07:00",
+      bedTime:       "23:00",
+      lunchStart:    "12:00",
+      lunchEnd:      "13:00",
+      aiPersonality: "BALANCED",
+      calendarMode:  "MANUAL",
+    },
+  });
+
   return (
-    <div className="pt-2">
-      <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-white/60">
-        <h2 className="text-sm font-bold text-slate-800 mb-5">設定</h2>
-        <div className="flex flex-col items-center justify-center py-16 text-slate-300">
-          <Settings className="w-10 h-10 mb-3 stroke-1" />
-          <p className="text-sm font-medium text-slate-400">設定画面は準備中です</p>
-        </div>
+    <div className="pt-2 max-w-2xl">
+      <div className="mb-5">
+        <h1 className="text-base font-bold text-slate-800">設定</h1>
+        <p className="text-[11px] text-slate-400 mt-0.5">
+          AIがスケジュールを生成するための基本情報を設定してください
+        </p>
       </div>
+
+      {/*
+        SettingsForm はクライアントコンポーネント（"use client"）。
+        サーバーコンポーネントからクライアントコンポーネントへ
+        データを渡すときは props を使う。
+        ※ Settings 型はシリアライズ可能（Date 型なし）なのでそのまま渡せる
+      */}
+      <SettingsForm initialSettings={settings} />
     </div>
   );
 }
