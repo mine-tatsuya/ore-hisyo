@@ -1,181 +1,334 @@
 "use client";
 
-import { useState } from "react";
+// TaskDetailSheet（全面改修版）
+// Sheet から Dialog に変更し、全フィールド（タイトル・メモ・締切・所要時間・優先度・ステータス・進捗）を編集できるようにした。
+// 「更新する」ボタンで全変更を一括 PATCH 送信する。
+
+import { useState, useEffect } from "react";
 import type { Task } from "@prisma/client";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import TaskStatusBadge from "./TaskStatusBadge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import TaskProgressBar from "./TaskProgressBar";
-import { CalendarDays, Clock, Trash2, RefreshCw } from "lucide-react";
+import { Trash2 } from "lucide-react";
 
 interface TaskDetailSheetProps {
-  task: Task | null;
-  open: boolean;
+  task: Task | null;       // null のとき Dialog は閉じる
   onClose: () => void;
   onUpdate: (task: Task) => void;
   onDelete: (id: string) => void;
 }
 
-function formatDatetime(date: Date | null) {
-  if (!date) return "なし";
-  return new Date(date).toLocaleString("ja-JP", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatMinutes(minutes: number) {
-  if (minutes < 60) return `${minutes}分`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m > 0 ? `${h}時間${m}分` : `${h}時間`;
-}
-
 export default function TaskDetailSheet({
   task,
-  open,
   onClose,
   onUpdate,
   onDelete,
 }: TaskDetailSheetProps) {
-  const [progressInput, setProgressInput] = useState<number>(0);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  // ── フォーム状態 ──
+  const [editTitle,        setEditTitle]        = useState("");
+  const [editDescription,  setEditDescription]  = useState("");
+  const [editDeadlineDate, setEditDeadlineDate] = useState("");
+  const [editDeadlineTime, setEditDeadlineTime] = useState("");
+  const [editHours,        setEditHours]        = useState(1);
+  const [editMins,         setEditMins]         = useState(0);
+  const [editPriority,     setEditPriority]     = useState<"HIGH" | "MEDIUM" | "LOW">("MEDIUM");
+  const [editStatus,       setEditStatus]       = useState<Task["status"]>("PENDING");
+  const [editProgressPct,  setEditProgressPct]  = useState(0);
 
-  // Sheet が開くたびに進捗値をタスクの値で初期化
-  if (task && progressInput !== task.progressPct && !isUpdating) {
-    setProgressInput(task.progressPct);
-  }
+  // ── UI 状態 ──
+  const [isSubmitting,      setIsSubmitting]      = useState(false);
+  const [isDeleting,        setIsDeleting]        = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [apiError,          setApiError]          = useState<string | null>(null);
 
-  if (!task) return null;
+  // ── task が変わるたびに全フィールドを現在値で初期化する ──
+  // これにより「別のタスクを開いたとき前の値が残る」問題を防ぐ。
+  useEffect(() => {
+    if (!task) return;
 
-  // 進捗を更新する
-  const handleProgressUpdate = async () => {
-    setIsUpdating(true);
+    setEditTitle(task.title);
+    setEditDescription(task.description ?? "");
+    setEditPriority(task.priority as "HIGH" | "MEDIUM" | "LOW");
+    setEditStatus(task.status);
+    setEditProgressPct(task.progressPct);
+    setEditHours(Math.floor(task.estimatedMinutes / 60));
+    setEditMins(task.estimatedMinutes % 60);
+
+    // 締切日時を date / time の2フィールドに分解する
+    if (task.deadline) {
+      const d = new Date(task.deadline);
+      const year  = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day   = String(d.getDate()).padStart(2, "0");
+      const hh    = String(d.getHours()).padStart(2, "0");
+      const mm    = String(d.getMinutes()).padStart(2, "0");
+      setEditDeadlineDate(`${year}-${month}-${day}`);
+      setEditDeadlineTime(`${hh}:${mm}`);
+    } else {
+      setEditDeadlineDate("");
+      setEditDeadlineTime("");
+    }
+
+    setShowDeleteConfirm(false);
+    setApiError(null);
+  }, [task]);
+
+  // ── 更新 ──
+  const handleUpdate = async () => {
+    if (!task) return;
+    if (!editTitle.trim()) {
+      setApiError("タスク名を入力してください");
+      return;
+    }
+    const totalMins = editHours * 60 + editMins;
+    if (totalMins < 1) {
+      setApiError("所要時間は1分以上で入力してください");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setApiError(null);
+
     try {
+      // 日付 + 時刻を ISO 文字列に合成（日付が空なら null = 締切なし）
+      const deadline = editDeadlineDate
+        ? `${editDeadlineDate}T${editDeadlineTime || "00:00"}`
+        : null;
+
       const res = await fetch(`/api/tasks/${task.id}`, {
-        method: "PATCH",
+        method:  "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ progressPct: progressInput }),
+        body:    JSON.stringify({
+          title:            editTitle.trim(),
+          description:      editDescription || null,
+          deadline,
+          estimatedMinutes: totalMins,
+          priority:         editPriority,
+          status:           editStatus,
+          progressPct:      editProgressPct,
+        }),
       });
-      if (res.ok) {
+
+      if (!res.ok) {
         const json = await res.json();
-        onUpdate(json.task);
+        setApiError(json.error ?? "更新に失敗しました");
+        return;
       }
+
+      const json = await res.json();
+      onUpdate(json.task);
+      onClose();
+    } catch {
+      setApiError("通信エラーが発生しました");
     } finally {
-      setIsUpdating(false);
+      setIsSubmitting(false);
     }
   };
 
-  // ステータスを更新する
-  const handleStatusChange = async (status: Task["status"]) => {
-    setIsUpdating(true);
-    try {
-      const res = await fetch(`/api/tasks/${task.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-      if (res.ok) {
-        const json = await res.json();
-        onUpdate(json.task);
-      }
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  // タスクを削除する
+  // ── 削除 ──
   const handleDelete = async () => {
-    if (!confirm(`「${task.title}」を削除しますか？`)) return;
+    if (!task) return;
     setIsDeleting(true);
     try {
       const res = await fetch(`/api/tasks/${task.id}`, { method: "DELETE" });
-      if (res.ok) {
-        onDelete(task.id);
-        onClose();
+      if (!res.ok) {
+        // 204 以外でエラー
+        const text = await res.text();
+        setApiError(text ? JSON.parse(text).error : "削除に失敗しました");
+        setIsDeleting(false);
+        return;
       }
-    } finally {
+      onDelete(task.id);
+    } catch {
+      setApiError("通信エラーが発生しました");
       setIsDeleting(false);
     }
   };
 
   return (
-    // shadcn Sheet: 画面右からスライドして出るパネル
-    <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent className="w-full sm:max-w-md overflow-y-auto">
-        <SheetHeader className="mb-6">
-          <SheetTitle className="text-base font-bold text-slate-900 text-left leading-snug">
-            {task.title}
-          </SheetTitle>
-          <div className="flex items-center gap-2 mt-1">
-            <TaskStatusBadge status={task.status} />
-            <span className="text-[10px] text-slate-400">
-              作成: {new Date(task.createdAt).toLocaleDateString("ja-JP")}
-            </span>
-          </div>
-        </SheetHeader>
+    // task が null のとき open=false でダイアログが閉じる
+    <Dialog open={task !== null} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="rounded-2xl max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="text-base font-bold text-slate-900">
+            タスクを編集
+          </DialogTitle>
+        </DialogHeader>
 
-        <div className="space-y-5">
-          {/* メタ情報 */}
-          <div className="grid grid-cols-2 gap-3">
-            <InfoItem
-              icon={<CalendarDays className="w-3.5 h-3.5" />}
-              label="締切"
-              value={formatDatetime(task.deadline)}
-            />
-            <InfoItem
-              icon={<Clock className="w-3.5 h-3.5" />}
-              label="所要時間"
-              value={formatMinutes(task.estimatedMinutes)}
+        <div className="space-y-4 mt-2">
+
+          {/* タスク名 */}
+          <div className="space-y-1.5">
+            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              タスク名 *
+            </Label>
+            <Input
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              className="bg-slate-50 border-slate-200"
             />
           </div>
 
-          {/* 説明 */}
-          {task.description && (
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-                メモ
-              </p>
-              <p className="text-sm text-slate-600 bg-slate-50 rounded-xl p-3 leading-relaxed">
-                {task.description}
-              </p>
+          {/* メモ */}
+          <div className="space-y-1.5">
+            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              メモ（任意）
+            </Label>
+            <Textarea
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              rows={2}
+              className="bg-slate-50 border-slate-200 resize-none"
+            />
+          </div>
+
+          {/* 締切 */}
+          <div className="space-y-1.5">
+            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              締切（任意）
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                type="date"
+                value={editDeadlineDate}
+                onChange={(e) => {
+                  setEditDeadlineDate(e.target.value);
+                  // 日付をクリアしたら時刻もリセット
+                  if (!e.target.value) setEditDeadlineTime("");
+                }}
+                className="bg-slate-50 border-slate-200 text-xs flex-1"
+              />
+              <Input
+                type="time"
+                value={editDeadlineTime}
+                onChange={(e) => setEditDeadlineTime(e.target.value)}
+                disabled={!editDeadlineDate}
+                className="bg-slate-50 border-slate-200 text-xs w-28 disabled:opacity-40 disabled:cursor-not-allowed"
+              />
             </div>
-          )}
+            {editDeadlineDate && (
+              <p className="text-[11px] text-slate-400">
+                {new Date(`${editDeadlineDate}T${editDeadlineTime || "00:00"}`).toLocaleString("ja-JP", {
+                  year: "numeric", month: "long", day: "numeric",
+                  hour: "2-digit", minute: "2-digit",
+                })}
+              </p>
+            )}
+          </div>
 
-          {/* ステータス変更 */}
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+          {/* 所要時間 */}
+          <div className="space-y-1.5">
+            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              所要時間 *
+            </Label>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="number"
+                  min={0}
+                  max={24}
+                  value={editHours}
+                  onChange={(e) => setEditHours(Math.max(0, Math.min(24, Number(e.target.value) || 0)))}
+                  className="bg-slate-50 border-slate-200 w-16 text-center tabular-nums"
+                />
+                <span className="text-sm text-slate-600 whitespace-nowrap">時間</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="number"
+                  min={0}
+                  max={59}
+                  value={editMins}
+                  onChange={(e) => setEditMins(Math.max(0, Math.min(59, Number(e.target.value) || 0)))}
+                  className="bg-slate-50 border-slate-200 w-16 text-center tabular-nums"
+                />
+                <span className="text-sm text-slate-600 whitespace-nowrap">分</span>
+              </div>
+              <span className="text-[11px] text-slate-400 ml-auto">
+                合計 {editHours * 60 + editMins} 分
+              </span>
+            </div>
+          </div>
+
+          {/* 優先度 */}
+          <div className="space-y-1.5">
+            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              優先度
+            </Label>
+            <div className="flex gap-2">
+              {(
+                [
+                  {
+                    value: "HIGH"   as const,
+                    label: "高",
+                    selected:   "bg-rose-500   text-white border-rose-500   shadow-sm",
+                    unselected: "bg-white text-rose-500   border-rose-200   hover:bg-rose-50",
+                  },
+                  {
+                    value: "MEDIUM" as const,
+                    label: "中",
+                    selected:   "bg-yellow-400 text-white border-yellow-400 shadow-sm",
+                    unselected: "bg-white text-yellow-600 border-yellow-200 hover:bg-yellow-50",
+                  },
+                  {
+                    value: "LOW"    as const,
+                    label: "低",
+                    selected:   "bg-slate-400  text-white border-slate-400  shadow-sm",
+                    unselected: "bg-white text-slate-500  border-slate-200  hover:bg-slate-100",
+                  },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setEditPriority(opt.value)}
+                  className={`
+                    flex-1 py-2 rounded-xl border text-xs font-bold transition-all duration-150
+                    ${editPriority === opt.value ? opt.selected : opt.unselected}
+                  `}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ステータス */}
+          <div className="space-y-1.5">
+            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
               ステータス
-            </p>
+            </Label>
+            {/*
+              クリックで editStatus state を変更するだけ（即時 API は呼ばない）。
+              「更新する」ボタンで他のフィールドと一緒に一括送信する。
+            */}
             <div className="grid grid-cols-2 gap-2">
               {(
                 [
                   { value: "PENDING",     label: "未着手" },
                   { value: "IN_PROGRESS", label: "進行中" },
-                  { value: "DONE",        label: "完了"   },
+                  { value: "DONE",        label: "完了" },
                   { value: "CANCELLED",   label: "キャンセル" },
                 ] as const
               ).map((s) => (
                 <button
                   key={s.value}
-                  onClick={() => handleStatusChange(s.value)}
-                  disabled={task.status === s.value || isUpdating}
+                  type="button"
+                  onClick={() => setEditStatus(s.value)}
                   className={`
                     py-2 rounded-xl text-xs font-medium border transition-all
-                    ${task.status === s.value
+                    ${editStatus === s.value
                       ? "bg-[#0052FF] text-white border-[#0052FF]"
                       : "bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300"
                     }
-                    disabled:opacity-50
                   `}
                 >
                   {s.label}
@@ -184,72 +337,91 @@ export default function TaskDetailSheet({
             </div>
           </div>
 
-          {/* 進捗更新（IN_PROGRESS のときのみ） */}
-          {task.status === "IN_PROGRESS" && (
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
-                進捗を更新
-              </p>
-              <TaskProgressBar value={progressInput} />
+          {/* 進捗スライダー（IN_PROGRESS のときのみ表示） */}
+          {editStatus === "IN_PROGRESS" && (
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                進捗
+              </Label>
+              <TaskProgressBar value={editProgressPct} />
               <input
                 type="range"
                 min={0}
                 max={100}
                 step={5}
-                value={progressInput}
-                onChange={(e) => setProgressInput(Number(e.target.value))}
-                className="w-full mt-3 accent-[#0052FF]"
+                value={editProgressPct}
+                onChange={(e) => setEditProgressPct(Number(e.target.value))}
+                className="w-full mt-2 accent-[#0052FF]"
               />
-              <Button
-                size="sm"
-                onClick={handleProgressUpdate}
-                disabled={isUpdating}
-                className="w-full mt-2 bg-[#0052FF] hover:bg-blue-700 text-white"
-              >
-                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-                {progressInput}% で更新
-              </Button>
+              <p className="text-[11px] text-slate-400 text-right">{editProgressPct}%</p>
             </div>
           )}
 
-          {/* 削除ボタン */}
-          <div className="pt-4 border-t border-slate-100">
+          {/* API エラー表示 */}
+          {apiError && (
+            <p className="text-xs text-rose-600 bg-rose-50 px-3 py-2 rounded-lg">{apiError}</p>
+          )}
+
+          {/* キャンセル / 更新するボタン */}
+          <div className="flex gap-2 pt-2">
             <Button
+              type="button"
               variant="outline"
-              size="sm"
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className="w-full text-rose-600 border-rose-200 hover:bg-rose-50"
+              className="flex-1"
+              onClick={onClose}
             >
-              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-              {isDeleting ? "削除中..." : "タスクを削除"}
+              キャンセル
+            </Button>
+            <Button
+              type="button"
+              onClick={handleUpdate}
+              disabled={isSubmitting}
+              className="flex-1 bg-[#0052FF] hover:bg-blue-700 text-white"
+            >
+              {isSubmitting ? "更新中..." : "更新する"}
             </Button>
           </div>
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
-}
 
-// 小さな情報表示コンポーネント（Sheet内でのみ使う）
-function InfoItem({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="bg-slate-50 rounded-xl p-3">
-      <div className="flex items-center gap-1.5 text-slate-400 mb-1">
-        {icon}
-        <span className="text-[10px] font-bold uppercase tracking-wider">
-          {label}
-        </span>
-      </div>
-      <p className="text-xs font-semibold text-slate-700">{value}</p>
-    </div>
+          {/* 削除リンク（確認 UI 内蔵） */}
+          <div className="pt-2 border-t border-slate-100">
+            {!showDeleteConfirm ? (
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="flex items-center gap-1 text-xs text-rose-400 hover:text-rose-600 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                タスクを削除
+              </button>
+            ) : (
+              <div className="bg-rose-50 rounded-xl p-3 space-y-2">
+                <p className="text-xs text-rose-600 font-medium">
+                  このタスクを削除しますか？この操作は取り消せません。
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="flex-1"
+                  >
+                    キャンセル
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                    className="flex-1 bg-rose-500 hover:bg-rose-600 text-white border-0"
+                  >
+                    {isDeleting ? "削除中..." : "削除する"}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

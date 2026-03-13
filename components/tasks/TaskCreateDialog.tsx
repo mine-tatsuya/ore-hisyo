@@ -25,7 +25,7 @@ const formSchema = z.object({
   description: z.string().max(1000).optional(),
   deadline: z.string().optional(),
   estimatedMinutes: z
-    .number({ invalid_type_error: "数値で入力してください" })
+    .number()
     .int()
     .min(1, "合計1分以上で入力してください")
     .max(1440, "最大24時間（1440分）まで設定できます"),

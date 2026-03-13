@@ -6,9 +6,10 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
-import { Sparkles, ListTodo, ChevronRight } from "lucide-react";
+import { ListTodo, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import TaskStatusBadge from "@/components/tasks/TaskStatusBadge";
+import DashboardScheduleCard from "@/components/dashboard/DashboardScheduleCard";
 
 export default async function DashboardPage() {
   // セッションからログイン中のユーザーIDを取得
@@ -95,29 +96,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* ========== 今日のスケジュール ========== */}
-      <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-white/60">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-sm font-bold text-slate-800">今日のスケジュール</h2>
-          <Link
-            href="/schedule"
-            className="flex items-center gap-1.5 bg-[#0052FF] text-white text-xs font-medium px-3.5 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            スケジュール生成
-          </Link>
-        </div>
-
-        {/* 空状態（スケジュールはStep 6で実装）*/}
-        <div className="flex flex-col items-center justify-center py-12 text-slate-300">
-          <Sparkles className="w-10 h-10 mb-3 stroke-1" />
-          <p className="text-sm font-medium text-slate-400">
-            スケジュールはまだ生成されていません
-          </p>
-          <p className="text-xs text-slate-300 mt-1">
-            「スケジュール生成」ボタンを押して始めましょう
-          </p>
-        </div>
-      </div>
+      <DashboardScheduleCard />
 
       {/* ========== 直近タスク ========== */}
       <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-white/60">

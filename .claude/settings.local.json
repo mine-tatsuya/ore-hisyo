@@ -3,7 +3,9 @@
     "allow": [
       "Bash(npx shadcn@latest:*)",
       "Bash(npx prisma:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(find .:*)",
+      "Bash(npm run:*)"
     ]
   }
 }

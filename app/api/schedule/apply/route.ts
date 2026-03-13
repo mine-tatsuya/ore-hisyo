@@ -120,8 +120,10 @@ export async function POST(req: NextRequest) {
       const calendarEventId = event.data.id ?? "";
       const plannedMinutes  = Math.round((endDt.getTime() - startDt.getTime()) / 60_000);
 
-      // SLEEP_BLOCK は Task/Log テーブルに存在しないので DB 操作をスキップ
-      if (item.taskId !== "SLEEP_BLOCK") {
+      // SLEEP_BLOCK と RECURRING_ プレフィックスのタスクは Task/Log テーブルに存在しないので DB 操作をスキップ
+      // RECURRING_ は定期タスク（RecurringTask モデル）であり、Task モデルには存在しない
+      const isRecurring = item.taskId.startsWith("RECURRING_");
+      if (item.taskId !== "SLEEP_BLOCK" && !isRecurring) {
         // このタスクのイベントIDリストに追加（分割タスク対応）
         const ids = taskEventIds.get(item.taskId) ?? [];
         ids.push(calendarEventId);

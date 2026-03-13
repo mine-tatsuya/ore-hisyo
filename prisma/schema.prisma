@@ -25,11 +25,12 @@ model User {
   updatedAt     DateTime  @updatedAt
 
   // リレーション（1人のUserが複数のAccountやTaskを持てる）
-  accounts Account[]
-  sessions Session[]
-  settings Settings?
-  tasks    Task[]
-  logs     Log[]
+  accounts       Account[]
+  sessions       Session[]
+  settings       Settings?
+  tasks          Task[]
+  logs           Log[]
+  recurringTasks RecurringTask[]
 }
 
 model Account {
@@ -136,6 +137,37 @@ model Task {
   @@index([userId, deadline])
 }
 
+// 定期タスク（毎日・毎週・N日ごと・毎月 繰り返すタスク）
+// 家事・運動など「期日はないが定期的にやること」を管理し、
+// Gemini のスケジュール生成に組み込む
+model RecurringTask {
+  id        String   @id @default(cuid())
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  title            String
+  description      String?  @db.Text   // Gemini への補足メモ兼用
+  estimatedMinutes Int
+  priority         Priority @default(MEDIUM)
+  isActive         Boolean  @default(true)
+
+  // 繰り返しパターン
+  recurrenceType   RecurrenceType
+  daysOfWeek       String?  // WEEKLY 時: JSON配列 "[1,3,5]" (1=月〜7=日)
+  intervalDays     Int?     // INTERVAL 時: 何日ごとか
+  dayOfMonth       Int?     // MONTHLY 時: 何日か (1-31)
+  startDate        DateTime @default(now()) // INTERVAL の基準日
+
+  // 希望時間帯
+  preferredTimeType  PreferredTimeType?  // MORNING/NOON/EVENING/SPECIFIC
+  preferredStartTime String?             // SPECIFIC 時: "HH:MM"
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
 // 計画と実績のログ（AIが学習する材料）
 model Log {
   id        String   @id @default(cuid())
@@ -188,4 +220,18 @@ enum TaskStatus {
   IN_PROGRESS // 進行中
   DONE        // 完了
   CANCELLED   // キャンセル
+}
+
+enum RecurrenceType {
+  DAILY    // 毎日
+  WEEKLY   // 毎週 特定曜日
+  INTERVAL // N日ごと
+  MONTHLY  // 毎月 特定日
+}
+
+enum PreferredTimeType {
+  MORNING   // 朝 (6:00-10:00)
+  NOON      // 昼 (11:00-14:00)
+  EVENING   // 夜 (18:00-22:00)
+  SPECIFIC  // 具体的な時刻 (preferredStartTime を使用)
 }

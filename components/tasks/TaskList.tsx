@@ -115,16 +115,13 @@ export default function TaskList({
         </div>
       )}
 
-      {/* 詳細シート（右からスライドするパネル） */}
-      {/* selectedTask が null でも Sheet の open=false でマウントされ続ける */}
+      {/* 編集ダイアログ（task が null のとき閉じる、null でないとき開く） */}
       <TaskDetailSheet
         task={selectedTask}
-        open={selectedTask !== null}
         onClose={() => setSelectedTask(null)}
         onUpdate={(updated) => {
           onUpdate(updated);
-          // 詳細シート内で更新されたら、シートに表示中のタスクも最新状態にする
-          setSelectedTask(updated);
+          // 更新後はダイアログが閉じるので setSelectedTask は呼ばない
         }}
         onDelete={(id) => {
           onDelete(id);

@@ -4,7 +4,7 @@
 // タスクの期限・進捗・優先度、空き時間、過去の実績をすべて含めることで
 // AIが文脈を理解したスケジューリングができる。
 
-import type { Task, Settings, Log } from "@prisma/client";
+import type { Task, Settings, Log, RecurringTask } from "@prisma/client";
 import type { FreeSlot } from "@/lib/calendar/getFreeSlots";
 
 // recentLogs には task.title を JOIN して取得する
@@ -18,12 +18,13 @@ interface TimedCalendarEvent {
 }
 
 interface BuildPromptOptions {
-  targetDate:  Date;
-  tasks:       Task[];               // IN_PROGRESS のみ渡す
-  freeSlots:   FreeSlot[];
-  settings:    Settings;
-  recentLogs:  LogWithTask[];        // 過去の実績ログ（最大10件程度）
-  timedEvents?: TimedCalendarEvent[]; // Google Calendar の既存予定
+  targetDate:     Date;
+  tasks:          Task[];               // IN_PROGRESS のみ渡す
+  recurringTasks?: RecurringTask[];     // 今日適用される定期タスク
+  freeSlots:      FreeSlot[];
+  settings:       Settings;
+  recentLogs:     LogWithTask[];        // 過去の実績ログ（最大10件程度）
+  timedEvents?:   TimedCalendarEvent[]; // Google Calendar の既存予定
 }
 
 /**
@@ -43,6 +44,7 @@ function toHHMM(date: Date): string {
 export function buildSchedulePrompt({
   targetDate,
   tasks,
+  recurringTasks = [],
   freeSlots,
   settings,
   recentLogs,
@@ -165,6 +167,64 @@ export function buildSchedulePrompt({
     })
     .join("\n\n");
 
+  // ── 定期タスクセクション（今日適用されるもの）──
+  let recurringSection = "";
+  if (recurringTasks.length > 0) {
+    const dayLabels = ["", "月", "火", "水", "木", "金", "土", "日"];
+
+    // 繰り返しパターンの説明文を組み立てる
+    const recurrenceDesc = (t: RecurringTask): string => {
+      switch (t.recurrenceType) {
+        case "DAILY":    return "毎日";
+        case "WEEKLY": {
+          if (!t.daysOfWeek) return "毎週";
+          try {
+            const days: number[] = JSON.parse(t.daysOfWeek);
+            return `毎週 ${days.map((d) => dayLabels[d]).join("・")}`;
+          } catch { return "毎週"; }
+        }
+        case "INTERVAL": return `${t.intervalDays}日ごと`;
+        case "MONTHLY":  return `毎月${t.dayOfMonth}日`;
+        default:         return "";
+      }
+    };
+
+    // 希望時間帯の説明文
+    const preferredTimeDesc = (t: RecurringTask): string => {
+      if (!t.preferredTimeType) return "指定なし";
+      switch (t.preferredTimeType) {
+        case "MORNING":  return "朝（6:00〜10:00）";
+        case "NOON":     return "昼（11:00〜14:00）";
+        case "EVENING":  return "夜（18:00〜22:00）";
+        case "SPECIFIC": return t.preferredStartTime ? `${t.preferredStartTime}から` : "指定なし";
+        default:         return "指定なし";
+      }
+    };
+
+    const recurringLines = recurringTasks
+      .map((t, i) => {
+        const priority = { HIGH: "高 🔴", MEDIUM: "中 🟡", LOW: "低 🟢" }[t.priority];
+        const lines = [
+          `${i + 1}. 【${t.title}】（タスクID: RECURRING_${t.id}）`,
+          `   - 繰り返し: ${recurrenceDesc(t)}`,
+          `   - 希望時間帯: ${preferredTimeDesc(t)}`,
+          `   - 所要時間: ${t.estimatedMinutes}分`,
+          `   - 優先度: ${priority}`,
+        ];
+        if (t.description) {
+          lines.push(`   - メモ: ${t.description}`);
+        }
+        return lines.join("\n");
+      })
+      .join("\n\n");
+
+    recurringSection = `
+【定期タスク（今日実施分）】
+※ 以下は毎日/毎週など繰り返し設定されたタスクで、今日が実施日に当たるものです
+${recurringLines}
+`;
+  }
+
   // ── 過去の実績ログ（あれば）──
   let logsSection = "";
   if (recentLogs.length > 0) {
@@ -205,7 +265,7 @@ ${freeSlotsLines}
 
 【対象日にやるべきタスク（進行中のみ）】
 ${tasksLines || "  現在スケジュール可能なタスクはありません"}
-${logsSection}
+${recurringSection}${logsSection}
 
 【スケジュール作成のルール】
 - 空き時間の範囲内でのみスケジュールを組むこと（既存予定と絶対に重複させないこと）
@@ -216,6 +276,8 @@ ${logsSection}
    進捗が遅れていれば多めに、余裕があれば少なめに今日の配分を調整する）
 - すべてのタスクが空き時間に収まらない場合は、期限が近くかつ進捗が遅れているタスクを優先して残りは省くこと
 - タスクとタスクの間に10〜15分の余白を設けること（脳の切り替え時間）
+- 定期タスクは希望時間帯を最優先にして配置すること（希望時間帯に空きがない場合のみ別の時間帯に配置する）
+- 定期タスクの taskId は必ず "RECURRING_" プレフィックスを付けた形式（例: "RECURRING_abc123"）で返すこと
 - 休憩はスケジュールに含めないこと（タスクとタスクの間の空白時間が休憩を兼ねる。「休憩」というイベントをschedule配列に追加してはいけない）
 - 進行中のタスク（進捗あり）は、その進捗を考慮して残り時間を計算すること
 

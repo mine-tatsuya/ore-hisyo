@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
   }
 
   // ── 全データを並列取得（Promise.all で同時実行し、待ち時間を最小化）──
-  const [settings, tasks, recentLogs, calendarEvents] = await Promise.all([
+  const [settings, tasks, recurringTasks, recentLogs, calendarEvents] = await Promise.all([
 
     // ① ユーザー設定（なければデフォルト作成）
     prisma.settings.upsert({
@@ -84,7 +84,13 @@ export async function GET(req: NextRequest) {
       ],
     }),
 
-    // ③ 過去5日分の実績ログ（計画 vs 実績の傾向をAIに教える）
+    // ③ アクティブな定期タスクを全件取得
+    prisma.recurringTask.findMany({
+      where: { userId, isActive: true },
+      orderBy: { priority: "asc" },
+    }),
+
+    // ④ 過去5日分の実績ログ（計画 vs 実績の傾向をAIに教える）
     prisma.log.findMany({
       where: {
         userId,
@@ -99,13 +105,68 @@ export async function GET(req: NextRequest) {
       take:    10, // 最大10件（多すぎるとプロンプトが長くなる）
     }),
 
-    // ④ Google Calendar の当日イベント取得
+    // ⑤ Google Calendar の当日イベント取得
     //    失敗しても空配列にして処理を続行（カレンダーなしでも生成できるように）
     getCalendarEvents(session.accessToken, targetDate).catch((err) => {
       console.warn("[schedule/generate] カレンダー取得失敗（空配列で続行）:", err.message);
       return [];
     }),
   ]);
+
+  // ── 定期タスクの適用判定 ──
+  // 対象日に「今日やるべき定期タスク」かどうかを判定する関数
+  // recurrenceType（繰り返しタイプ）ごとにロジックが異なります
+  function isRecurringTaskApplicable(
+    task: (typeof recurringTasks)[0],
+    date: Date
+  ): boolean {
+    // 曜日：1=月曜, 2=火曜, ... 7=日曜（ISO 8601 準拠）
+    // JavaScript の getDay() は 0=日曜なので変換が必要
+    const jsDay  = date.getDay(); // 0=日〜6=土
+    const isoDay = jsDay === 0 ? 7 : jsDay; // 1=月〜7=日
+
+    switch (task.recurrenceType) {
+      case "DAILY":
+        // 毎日なので常に true
+        return true;
+
+      case "WEEKLY": {
+        // daysOfWeek は "[1,3,5]" のような JSON 文字列
+        if (!task.daysOfWeek) return false;
+        try {
+          const days: number[] = JSON.parse(task.daysOfWeek);
+          return days.includes(isoDay);
+        } catch {
+          return false;
+        }
+      }
+
+      case "INTERVAL": {
+        // startDate から何日経ったかを計算し、intervalDays で割り切れる日が実施日
+        if (!task.intervalDays) return false;
+        const start = new Date(task.startDate);
+        start.setHours(0, 0, 0, 0);
+        const target = new Date(date);
+        target.setHours(0, 0, 0, 0);
+        const diffDays = Math.round(
+          (target.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        return diffDays >= 0 && diffDays % task.intervalDays === 0;
+      }
+
+      case "MONTHLY":
+        // dayOfMonth と今日の日付が一致するか
+        return task.dayOfMonth === date.getDate();
+
+      default:
+        return false;
+    }
+  }
+
+  // 今日適用される定期タスクを絞り込む
+  const applicableRecurringTasks = recurringTasks.filter((t) =>
+    isRecurringTaskApplicable(t, targetDate)
+  );
 
   // ── 空き時間の計算 ──
   const freeSlots = getFreeSlots(targetDate, settings, calendarEvents);
@@ -144,10 +205,10 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // タスクがゼロ = 何もスケジュールするものがない
-  if (tasks.length === 0) {
+  // タスクも定期タスクもゼロ = 何もスケジュールするものがない
+  if (tasks.length === 0 && applicableRecurringTasks.length === 0) {
     return Response.json(
-      { error: "進行中のタスクがありません。タスクを「進行中」に変更してからスケジュールを生成してください。" },
+      { error: "進行中のタスクも本日の定期タスクもありません。タスクを「進行中」に変更するか、定期タスクを追加してからスケジュールを生成してください。" },
       { status: 400 }
     );
   }
@@ -160,6 +221,7 @@ export async function GET(req: NextRequest) {
   const prompt = buildSchedulePrompt({
     targetDate,
     tasks,
+    recurringTasks: applicableRecurringTasks,
     freeSlots,
     settings,
     recentLogs,
