@@ -1,18 +1,11 @@
 # 俺秘書
 
 **AI が毎日のスケジュールを自動生成する、個人向け秘書アプリ**
+　本番環境（テストユーザーのみ）：https://ore-hisyo.vercel.app
 
-![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
-![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)
-![Prisma](https://img.shields.io/badge/Prisma-7-2D3748?logo=prisma)
-![Gemini](https://img.shields.io/badge/Gemini_API-Google-4285F4?logo=google)
-![Vercel](https://img.shields.io/badge/Vercel-Deployed-black?logo=vercel)
-
-**デモ：https://ore-hisyo.vercel.app**
-
----
 
 ## 概要・開発背景
+Notionページ：https://www.notion.so/2e1edb10c0498038b02ad57839d68a90
 
 ### なぜ作ったのか
 
