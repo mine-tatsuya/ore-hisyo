@@ -24,9 +24,11 @@ export default async function SettingsPage() {
       bedTime:       "23:00",
       lunchStart:    "12:00",
       lunchEnd:      "13:00",
-      aiPersonality: "BALANCED",
-      calendarMode:  "MANUAL",
-      location:      "",
+      aiPersonality:    "BALANCED",
+      calendarMode:     "MANUAL",
+      location:         "",
+      cronTime:         "12:00",
+      cronTargetOffset: 1,
     },
   });
 

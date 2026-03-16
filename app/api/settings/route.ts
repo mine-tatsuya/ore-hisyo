@@ -21,6 +21,9 @@ const settingsSchema = z.object({
   aiCustomPrompt:  z.string().max(500).optional(),
   calendarMode:    z.enum(["MANUAL", "AUTO"]),
   location:        z.string().max(100).default(""),
+  // Cron 設定（calendarMode = AUTO のときのみ使用）
+  cronTime:         z.string().regex(/^\d{2}:00$/, "HH:00形式で入力してください").default("12:00"),
+  cronTargetOffset: z.number().int().min(0).max(7).default(1),
 });
 
 // ---- GET ----
@@ -43,9 +46,11 @@ export async function GET() {
       bedTime:       "23:00",
       lunchStart:    "12:00",
       lunchEnd:      "13:00",
-      aiPersonality: "BALANCED",
-      calendarMode:  "MANUAL",   // ← 初期値はマニュアルモード
-      location:      "",
+      aiPersonality:    "BALANCED",
+      calendarMode:     "MANUAL",   // ← 初期値はマニュアルモード
+      location:         "",
+      cronTime:         "12:00",
+      cronTargetOffset: 1,
     },
   });
 

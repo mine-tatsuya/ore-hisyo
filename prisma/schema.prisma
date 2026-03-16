@@ -101,6 +101,14 @@ model Settings {
   // カレンダーへの反映モード
   calendarMode CalendarMode @default(MANUAL)
 
+  // Cron 設定（calendarMode = AUTO のときのみ使用）
+  cronTime         String @default("12:00")
+  // 自動実行時刻（JST, HH:00 形式。例: "07:00"）
+  // vercel.json を毎時実行にして、この時刻に一致したユーザーだけ処理する
+
+  cronTargetOffset Int    @default(1)
+  // 何日後のスケジュールを生成するか（0=当日, 1=翌日, 2=2日後）
+
   // 居住地（天気予報取得に使用。都道府県名で入力：例 "熊本県"）
   location String @default("")
 
