@@ -24,9 +24,11 @@ const applySchema = z.object({
   ),
 });
 
-// "2024-03-15" + "09:00" → Date オブジェクト
+// "2024-03-15" + "09:00" → Date オブジェクト（JST として解釈）
+// タイムゾーン指定なしの ISO 文字列はサーバーのローカル時間（Vercel = UTC）で解釈されるため、
+// "+09:00" を明示して JST であることを保証する
 function toDateTime(dateStr: string, timeStr: string): Date {
-  return new Date(`${dateStr}T${timeStr}:00`);
+  return new Date(`${dateStr}T${timeStr}:00+09:00`);
 }
 
 
@@ -143,8 +145,7 @@ export async function POST(req: NextRequest) {
         });
 
         // ── Log レコードを作成（今日分の重複は削除してから再作成）──
-        const todayStart = new Date(date);
-        todayStart.setHours(0, 0, 0, 0);
+        const todayStart = new Date(`${date}T00:00:00+09:00`);
         await prisma.log.deleteMany({
           where: {
             taskId:       item.taskId,
