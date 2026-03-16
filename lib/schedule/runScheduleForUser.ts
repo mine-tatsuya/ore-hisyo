@@ -190,57 +190,76 @@ export async function runScheduleForUser(
     settings.location ?? "",
   );
 
+  // ── Gemini API 呼び出し（フォールバック付き）──
+  const FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-3-flash", "gemini-2.5-flash-lite"];
+
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-  const model  = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash-lite",
-    tools: [{ functionDeclarations: SCHEDULE_TOOL_DECLARATIONS as any }],
-    generationConfig: { temperature: 0.7 },
-  });
 
-  let rawText: string;
-  try {
-    const chat = model.startChat();
-    let result = await chat.sendMessage(prompt);
+  let rawText: string  = "";
+  let geminiSuccess    = false;
 
-    for (let i = 0; i < 5; i++) {
-      const calls = result.response.functionCalls();
-      if (!calls?.length) break;
+  for (const modelName of FALLBACK_MODELS) {
+    const model = genAI.getGenerativeModel({
+      model: modelName,
+      tools: [{ functionDeclarations: SCHEDULE_TOOL_DECLARATIONS as any }],
+      generationConfig: { temperature: 0.7 },
+    });
 
-      const toolResponses = await Promise.all(
-        calls.map(async (call) => {
-          const handler = toolHandlers[call.name as keyof typeof toolHandlers];
-          if (!handler) {
+    try {
+      const chat = model.startChat();
+      let result = await chat.sendMessage(prompt);
+
+      for (let i = 0; i < 5; i++) {
+        const calls = result.response.functionCalls();
+        if (!calls?.length) break;
+
+        const toolResponses = await Promise.all(
+          calls.map(async (call) => {
+            const handler = toolHandlers[call.name as keyof typeof toolHandlers];
+            if (!handler) {
+              return {
+                functionResponse: {
+                  name:     call.name,
+                  response: { error: `Unknown tool: ${call.name}` },
+                },
+              };
+            }
+            const response = await handler(call.args as never);
             return {
               functionResponse: {
                 name:     call.name,
-                response: { error: `Unknown tool: ${call.name}` },
+                response: response ?? { error: "No result" },
               },
             };
-          }
-          const response = await handler(call.args as never);
-          return {
-            functionResponse: {
-              name:     call.name,
-              response: response ?? { error: "No result" },
-            },
-          };
-        })
-      );
+          })
+        );
 
-      result = await chat.sendMessage(toolResponses);
+        result = await chat.sendMessage(toolResponses);
+      }
+
+      rawText = result.response.text().trim();
+      if (rawText.startsWith("```")) {
+        rawText = rawText
+          .replace(/^```(?:json)?\n?/, "")
+          .replace(/\n?```$/, "")
+          .trim();
+      }
+
+      geminiSuccess = true;
+      break;
+
+    } catch (err) {
+      if ((err as any).status === 429) {
+        console.warn(`[runScheduleForUser] ${modelName} quota exceeded (userId=${userId}), trying next model...`);
+        continue;
+      }
+      console.error(`[runScheduleForUser] Gemini API error (userId=${userId}):`, err);
+      return { success: false, appliedCount: 0, error: "Gemini API エラー" };
     }
+  }
 
-    rawText = result.response.text().trim();
-    if (rawText.startsWith("```")) {
-      rawText = rawText
-        .replace(/^```(?:json)?\n?/, "")
-        .replace(/\n?```$/, "")
-        .trim();
-    }
-
-  } catch (err) {
-    console.error(`[runScheduleForUser] Gemini API error (userId=${userId}):`, err);
-    return { success: false, appliedCount: 0, error: "Gemini API エラー" };
+  if (!geminiSuccess) {
+    return { success: false, appliedCount: 0, error: "本日の AI 利用上限に達しました" };
   }
 
   // ── 5. レスポンスのパース・バリデーション ──

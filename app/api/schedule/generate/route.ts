@@ -244,74 +244,86 @@ export async function GET(req: NextRequest) {
     settings.location ?? "",
   );
 
+  // ── Gemini API 呼び出し（フォールバック付き）──
+  //
+  // 各モデルのクォータは独立している（例: 2.5-flash が上限でも 3-flash は使える）
+  // 429 エラーが返ったら次のモデルに切り替えて再試行する
+  const FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-3-flash", "gemini-2.5-flash-lite"];
+
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-  const model  = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash-lite",
-    // ツール定義を渡すことで Gemini が Function Calling を使えるようになる
-    tools: [{ functionDeclarations: SCHEDULE_TOOL_DECLARATIONS as any }],
-    generationConfig: {
-      // ※ Function Calling 中間レスポンスと干渉するため responseMimeType は除去。
-      //    代わりにプロンプトで「最終回答は必ず JSON 形式で」と明示する。
-      temperature: 0.7,
-    },
-  });
 
-  let rawText: string;
-  try {
-    // startChat() でチャット形式にする（Function Calling はチャット形式が必須）
-    const chat = model.startChat();
-    let result = await chat.sendMessage(prompt);
+  let rawText: string = "";
+  let geminiSuccess   = false;
 
-    // ── Function Calling ループ ──
-    // AI がツールを呼びたいとき → functionCalls() に配列が入る
-    // ツール結果を返す → AI がまたツールを呼ぶ or 最終回答を返す
-    for (let i = 0; i < 5; i++) {
-      const calls = result.response.functionCalls();
-      if (!calls?.length) break; // ツール呼び出しなし → ループ終了
+  for (const modelName of FALLBACK_MODELS) {
+    const model = genAI.getGenerativeModel({
+      model: modelName,
+      tools: [{ functionDeclarations: SCHEDULE_TOOL_DECLARATIONS as any }],
+      generationConfig: { temperature: 0.7 },
+    });
 
-      // 全ツール呼び出しを並列実行（複数ある場合に効率化）
-      const toolResponses = await Promise.all(
-        calls.map(async (call) => {
-          const handler = toolHandlers[call.name as keyof typeof toolHandlers];
-          if (!handler) {
-            // 未知のツール名が来た場合はエラーを返す
+    try {
+      const chat = model.startChat();
+      let result = await chat.sendMessage(prompt);
+
+      for (let i = 0; i < 5; i++) {
+        const calls = result.response.functionCalls();
+        if (!calls?.length) break;
+
+        const toolResponses = await Promise.all(
+          calls.map(async (call) => {
+            const handler = toolHandlers[call.name as keyof typeof toolHandlers];
+            if (!handler) {
+              return {
+                functionResponse: {
+                  name:     call.name,
+                  response: { error: `Unknown tool: ${call.name}` },
+                },
+              };
+            }
+            const response = await handler(call.args as never);
             return {
               functionResponse: {
                 name:     call.name,
-                response: { error: `Unknown tool: ${call.name}` },
+                response: response ?? { error: "No result" },
               },
             };
-          }
-          const response = await handler(call.args as never);
-          return {
-            functionResponse: {
-              name:     call.name,
-              response: response ?? { error: "No result" },
-            },
-          };
-        })
+          })
+        );
+
+        result = await chat.sendMessage(toolResponses);
+      }
+
+      rawText = result.response.text().trim();
+      if (rawText.startsWith("```")) {
+        rawText = rawText
+          .replace(/^```(?:json)?\n?/, "")
+          .replace(/\n?```$/, "")
+          .trim();
+      }
+
+      geminiSuccess = true;
+      break; // 成功 → ループ終了
+
+    } catch (error) {
+      // 429 = クォータ上限 → 次のモデルへ
+      if ((error as any).status === 429) {
+        console.warn(`[schedule/generate] ${modelName} quota exceeded, trying next model...`);
+        continue;
+      }
+      // それ以外のエラーはすぐ返す
+      console.error("[schedule/generate] Gemini API error:", error);
+      return Response.json(
+        { error: "AI の呼び出しに失敗しました。しばらく後に再試行してください。" },
+        { status: 502 }
       );
-
-      // ツール実行結果を AI に返して次のターンへ
-      result = await chat.sendMessage(toolResponses);
     }
+  }
 
-    rawText = result.response.text();
-
-    // Gemini が ```json ... ``` で囲って返してくることがあるので除去する
-    rawText = rawText.trim();
-    if (rawText.startsWith("```")) {
-      rawText = rawText
-        .replace(/^```(?:json)?\n?/, "")
-        .replace(/\n?```$/, "")
-        .trim();
-    }
-
-  } catch (error) {
-    console.error("[schedule/generate] Gemini API error:", error);
+  if (!geminiSuccess) {
     return Response.json(
-      { error: "AI の呼び出しに失敗しました。しばらく後に再試行してください。" },
-      { status: 502 }
+      { error: "本日の AI 利用上限に達しました。明日再試行してください。" },
+      { status: 429 }
     );
   }
 
