@@ -427,53 +427,13 @@ export default function SettingsForm({ initialSettings }: SettingsFormProps) {
             );
           })}
 
-          {/* 自動モード選択時：Cron 設定パネル */}
+          {/* 自動モード選択時：実行タイミングの説明 */}
           {watchCalendarMode === "AUTO" && (
-            <div className="bg-[#0052FF]/5 border border-[#0052FF]/20 rounded-xl p-4 space-y-4">
-              <p className="text-xs font-bold text-[#0052FF]">自動スケジュール設定</p>
-
-              {/* 実行時刻 */}
-              <div className="space-y-1.5">
-                <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  実行時刻（JST）
-                </Label>
-                <select
-                  {...register("cronTime")}
-                  className="bg-white border border-slate-200 text-sm rounded-lg px-3 py-2 w-32 focus:outline-none focus:ring-2 focus:ring-[#0052FF]/30"
-                >
-                  {Array.from({ length: 24 }, (_, h) => {
-                    const hh = String(h).padStart(2, "0");
-                    return (
-                      <option key={hh} value={`${hh}:00`}>{hh}:00</option>
-                    );
-                  })}
-                </select>
-                <p className="text-[11px] text-slate-400">
-                  この時刻になると自動でスケジュールを生成し Google Calendar に追加します
-                </p>
-                {errors.cronTime && (
-                  <p className="text-xs text-rose-600">{errors.cronTime.message}</p>
-                )}
-              </div>
-
-              {/* 対象日 */}
-              <div className="space-y-1.5">
-                <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  対象日
-                </Label>
-                <select
-                  {...register("cronTargetOffset", { valueAsNumber: true })}
-                  className="bg-white border border-slate-200 text-sm rounded-lg px-3 py-2 w-40 focus:outline-none focus:ring-2 focus:ring-[#0052FF]/30"
-                >
-                  <option value={0}>当日（今日）</option>
-                  <option value={1}>翌日（明日）</option>
-                  <option value={2}>2日後</option>
-                  <option value={3}>3日後</option>
-                </select>
-                <p className="text-[11px] text-slate-400">
-                  何日後のスケジュールを生成するか選びます
-                </p>
-              </div>
+            <div className="flex items-start gap-2 bg-[#0052FF]/5 border border-[#0052FF]/20 rounded-xl p-3">
+              <Info className="w-4 h-4 text-[#0052FF] flex-shrink-0 mt-0.5" />
+              <p className="text-[11px] text-[#0052FF]/80 leading-relaxed">
+                毎日 12:00（正午）に翌日のスケジュールを自動生成し、Google Calendar に追加します。
+              </p>
             </div>
           )}
         </div>
