@@ -20,6 +20,7 @@ const settingsSchema = z.object({
   aiPersonality:   z.enum(["STRICT", "BALANCED", "RELAXED"]),
   aiCustomPrompt:  z.string().max(500).optional(),
   calendarMode:    z.enum(["MANUAL", "AUTO"]),
+  location:        z.string().max(100).default(""),
 });
 
 // ---- GET ----
@@ -44,6 +45,7 @@ export async function GET() {
       lunchEnd:      "13:00",
       aiPersonality: "BALANCED",
       calendarMode:  "MANUAL",   // ← 初期値はマニュアルモード
+      location:      "",
     },
   });
 
@@ -79,6 +81,7 @@ export async function PUT(req: NextRequest) {
       focusTimeStart: data.focusTimeStart || null,
       focusTimeEnd:   data.focusTimeEnd   || null,
       aiCustomPrompt: data.aiCustomPrompt || null,
+      location:       data.location ?? "",
     },
     create: {
       userId,
@@ -86,6 +89,7 @@ export async function PUT(req: NextRequest) {
       focusTimeStart: data.focusTimeStart || null,
       focusTimeEnd:   data.focusTimeEnd   || null,
       aiCustomPrompt: data.aiCustomPrompt || null,
+      location:       data.location ?? "",
     },
   });
 

@@ -101,6 +101,9 @@ model Settings {
   // カレンダーへの反映モード
   calendarMode CalendarMode @default(MANUAL)
 
+  // 居住地（天気予報取得に使用。都道府県名で入力：例 "熊本県"）
+  location String @default("")
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 

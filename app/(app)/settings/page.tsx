@@ -26,6 +26,7 @@ export default async function SettingsPage() {
       lunchEnd:      "13:00",
       aiPersonality: "BALANCED",
       calendarMode:  "MANUAL",
+      location:      "",
     },
   });
 

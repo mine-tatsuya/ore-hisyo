@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Check, Clock, Bot, CalendarClock, Info } from "lucide-react";
+import { Check, Clock, Bot, CalendarClock, Info, MapPin } from "lucide-react";
 
 // ---- バリデーションスキーマ（APIと同じ定義）----
 const formSchema = z.object({
@@ -25,6 +25,7 @@ const formSchema = z.object({
   aiPersonality:  z.enum(["STRICT", "BALANCED", "RELAXED"]),
   aiCustomPrompt: z.string().max(500).optional(),
   calendarMode:   z.enum(["MANUAL", "AUTO"]),
+  location:       z.string().max(100),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -58,6 +59,7 @@ export default function SettingsForm({ initialSettings }: SettingsFormProps) {
       aiPersonality:  initialSettings.aiPersonality,
       aiCustomPrompt: initialSettings.aiCustomPrompt ?? "",
       calendarMode:   initialSettings.calendarMode,
+      location:       initialSettings.location ?? "",
     },
   });
 
@@ -332,7 +334,34 @@ export default function SettingsForm({ initialSettings }: SettingsFormProps) {
         </div>
       </div>
 
-      {/* ========== セクション③：カレンダー設定 ========== */}
+      {/* ========== セクション③：居住地設定 ========== */}
+      <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-white/60">
+        <SectionHeader
+          icon={<MapPin className="w-4 h-4" />}
+          title="居住地"
+          description="天気予報を取得する地域を設定します（都道府県名で入力）"
+        />
+        <div className="space-y-1.5">
+          <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            都道府県
+          </Label>
+          <Input
+            type="text"
+            {...register("location")}
+            placeholder="例: 熊本県"
+            className="bg-slate-50 border-slate-200 text-sm max-w-xs"
+          />
+          <p className="text-[11px] text-slate-400">
+            都道府県名で入力してください（例: 東京都、大阪府、熊本県）。
+            天気条件付きタスクのスケジューリングに使用します。
+          </p>
+          {errors.location && (
+            <p className="text-xs text-rose-600">{errors.location.message}</p>
+          )}
+        </div>
+      </div>
+
+      {/* ========== セクション④：カレンダー設定 ========== */}
       <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-white/60">
         <SectionHeader
           icon={<CalendarClock className="w-4 h-4" />}

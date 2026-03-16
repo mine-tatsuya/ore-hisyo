@@ -10,6 +10,7 @@ import { getCalendarEvents } from "@/lib/calendar/getCalendarEvents";
 import { getFreeSlots } from "@/lib/calendar/getFreeSlots";
 import { buildSchedulePrompt } from "@/lib/ai/buildSchedulePrompt";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { SCHEDULE_TOOL_DECLARATIONS, createToolHandlers } from "@/lib/ai/scheduleTools";
 import { z } from "zod";
 import { NextRequest } from "next/server";
 
@@ -228,25 +229,84 @@ export async function GET(req: NextRequest) {
     timedEvents,
   });
 
-  // ── Gemini API 呼び出し ──
+  // ── Gemini API 呼び出し（Function Calling 対応）──
+  //
+  // Function Calling の仕組み:
+  // 1. プロンプト + ツール一覧を送る
+  // 2. AI が「ツールを呼びたい」と判断 → functionCalls() に配列が入る
+  // 3. こちらがツールを実行して結果を返す
+  // 4. AI がまたツールを呼ぶ or 最終 JSON を返す
+  // 5. 最大5回ループして無限ループを防止
+
+  // ツールハンドラーを生成（クロージャで accessToken と location を束縛）
+  const toolHandlers = createToolHandlers(
+    session.accessToken,
+    settings.location ?? "",
+  );
+
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
   const model  = genAI.getGenerativeModel({
-    // gemini-1.5-flash は旧世代で現在の API では利用不可
-    // gemini-2.0-flash が 2025〜2026年現在の推奨モデル
-    // （高速・低コスト・高性能のバランス型）
     model: "gemini-2.5-flash",
+    // ツール定義を渡すことで Gemini が Function Calling を使えるようになる
+    tools: [{ functionDeclarations: SCHEDULE_TOOL_DECLARATIONS as any }],
     generationConfig: {
-      // responseMimeType: "application/json" を指定することで
-      // Gemini が必ず JSON のみを返すようになる（```json ... ``` の余計な装飾なし）
-      responseMimeType: "application/json",
-      temperature: 0.7, // 0=確実性重視, 1=創造性重視。0.7はバランス型
-    } as any,
+      // ※ Function Calling 中間レスポンスと干渉するため responseMimeType は除去。
+      //    代わりにプロンプトで「最終回答は必ず JSON 形式で」と明示する。
+      temperature: 0.7,
+    },
   });
 
   let rawText: string;
   try {
-    const result = await model.generateContent(prompt);
+    // startChat() でチャット形式にする（Function Calling はチャット形式が必須）
+    const chat = model.startChat();
+    let result = await chat.sendMessage(prompt);
+
+    // ── Function Calling ループ ──
+    // AI がツールを呼びたいとき → functionCalls() に配列が入る
+    // ツール結果を返す → AI がまたツールを呼ぶ or 最終回答を返す
+    for (let i = 0; i < 5; i++) {
+      const calls = result.response.functionCalls();
+      if (!calls?.length) break; // ツール呼び出しなし → ループ終了
+
+      // 全ツール呼び出しを並列実行（複数ある場合に効率化）
+      const toolResponses = await Promise.all(
+        calls.map(async (call) => {
+          const handler = toolHandlers[call.name as keyof typeof toolHandlers];
+          if (!handler) {
+            // 未知のツール名が来た場合はエラーを返す
+            return {
+              functionResponse: {
+                name:     call.name,
+                response: { error: `Unknown tool: ${call.name}` },
+              },
+            };
+          }
+          const response = await handler(call.args as never);
+          return {
+            functionResponse: {
+              name:     call.name,
+              response: response ?? { error: "No result" },
+            },
+          };
+        })
+      );
+
+      // ツール実行結果を AI に返して次のターンへ
+      result = await chat.sendMessage(toolResponses);
+    }
+
     rawText = result.response.text();
+
+    // Gemini が ```json ... ``` で囲って返してくることがあるので除去する
+    rawText = rawText.trim();
+    if (rawText.startsWith("```")) {
+      rawText = rawText
+        .replace(/^```(?:json)?\n?/, "")
+        .replace(/\n?```$/, "")
+        .trim();
+    }
+
   } catch (error) {
     console.error("[schedule/generate] Gemini API error:", error);
     return Response.json(
