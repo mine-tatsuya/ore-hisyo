@@ -28,7 +28,7 @@ const formSchema = z.object({
     .number()
     .int()
     .min(1, "合計1分以上で入力してください")
-    .max(1440, "最大24時間（1440分）まで設定できます"),
+    .max(59940, "最大999時間まで設定できます"),
   priority: z.enum(["HIGH", "MEDIUM", "LOW"]),
 });
 
@@ -115,8 +115,7 @@ export default function TaskCreateDialog({
 
   // ---- 所要時間：時間が変わったとき ----
   const handleHoursChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // 0〜24 の範囲に収める（24時間が上限）
-    const h = Math.max(0, Math.min(24, Math.floor(Number(e.target.value)) || 0));
+    const h = Math.max(0, Math.min(999, Math.floor(Number(e.target.value)) || 0));
     setHoursInput(h);
     // 合算して form に反映。shouldValidate: true でバリデーションも即時実行
     setValue("estimatedMinutes", h * 60 + minsInput, { shouldValidate: true });
@@ -234,26 +233,24 @@ export default function TaskCreateDialog({
             )}
           </div>
 
-          {/* 所要時間 */}
+          {/* 合計作業時間 */}
           <div className="space-y-1.5">
             <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              所要時間 *
+              合計作業時間 *
             </Label>
-            {/*
-              時間（hours）と分（minutes）を別々に入力し、内部では合計分数に変換する。
-              例: 1時間30分 → estimatedMinutes = 90
-              setValue("estimatedMinutes", ...) でフォームに反映させている。
-            */}
+            <p className="text-[11px] text-slate-400">
+              期限までに必要な総作業時間を入力してください。AIが毎日適切な量に分割してスケジュールします。
+            </p>
             <div className="flex items-center gap-3">
               {/* 時間 */}
               <div className="flex items-center gap-1.5">
                 <Input
                   type="number"
                   min={0}
-                  max={24}
+                  max={999}
                   value={hoursInput}
                   onChange={handleHoursChange}
-                  className="bg-slate-50 border-slate-200 w-16 text-center tabular-nums"
+                  className="bg-slate-50 border-slate-200 w-20 text-center tabular-nums"
                 />
                 <span className="text-sm text-slate-600 whitespace-nowrap">時間</span>
               </div>
@@ -269,10 +266,6 @@ export default function TaskCreateDialog({
                 />
                 <span className="text-sm text-slate-600 whitespace-nowrap">分</span>
               </div>
-              {/* 合計のプレビュー */}
-              <span className="text-[11px] text-slate-400 ml-auto">
-                合計 {hoursInput * 60 + minsInput} 分
-              </span>
             </div>
             {errors.estimatedMinutes && (
               <p className="text-xs text-rose-600">

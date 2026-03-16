@@ -11,7 +11,7 @@ const updateTaskSchema = z.object({
   title: z.string().min(1).max(100).optional(),
   description: z.string().max(1000).optional().nullable(),
   deadline: z.string().optional().nullable(),
-  estimatedMinutes: z.number().int().min(1).max(1440).optional(),
+  estimatedMinutes: z.number().int().min(1).max(59940).optional(),
   priority: z.enum(["HIGH", "MEDIUM", "LOW"]).optional(),
   status: z.enum(["PENDING", "IN_PROGRESS", "DONE", "CANCELLED"]).optional(),
   progressPct: z.number().int().min(0).max(100).optional(),

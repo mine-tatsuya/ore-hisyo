@@ -224,20 +224,23 @@ export default function TaskDetailSheet({
             )}
           </div>
 
-          {/* 所要時間 */}
+          {/* 合計作業時間 */}
           <div className="space-y-1.5">
             <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              所要時間 *
+              合計作業時間 *
             </Label>
+            <p className="text-[11px] text-slate-400">
+              期限までに必要な総作業時間。AIが毎日適切な量に分割します。
+            </p>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5">
                 <Input
                   type="number"
                   min={0}
-                  max={24}
+                  max={999}
                   value={editHours}
-                  onChange={(e) => setEditHours(Math.max(0, Math.min(24, Number(e.target.value) || 0)))}
-                  className="bg-slate-50 border-slate-200 w-16 text-center tabular-nums"
+                  onChange={(e) => setEditHours(Math.max(0, Math.min(999, Number(e.target.value) || 0)))}
+                  className="bg-slate-50 border-slate-200 w-20 text-center tabular-nums"
                 />
                 <span className="text-sm text-slate-600 whitespace-nowrap">時間</span>
               </div>
@@ -252,9 +255,6 @@ export default function TaskDetailSheet({
                 />
                 <span className="text-sm text-slate-600 whitespace-nowrap">分</span>
               </div>
-              <span className="text-[11px] text-slate-400 ml-auto">
-                合計 {editHours * 60 + editMins} 分
-              </span>
             </div>
           </div>
 

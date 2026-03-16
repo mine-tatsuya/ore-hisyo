@@ -19,7 +19,7 @@ const createTaskSchema = z.object({
     .number()
     .int()
     .min(1, "1分以上で入力してください")
-    .max(1440, "24時間（1440分）以内で入力してください"),
+    .max(59940, "999時間（59940分）以内で入力してください"),
   priority: z.enum(["HIGH", "MEDIUM", "LOW"]),
 });
 

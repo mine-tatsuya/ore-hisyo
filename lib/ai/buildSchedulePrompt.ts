@@ -150,14 +150,37 @@ export function buildSchedulePrompt({
         if (isToday) deadlineStr += " ⚠️ 今日が期限！";
       }
 
+      // 残り作業時間 = 合計作業時間 × (1 - 進捗率)
+      const remainingMinutes = Math.round(t.estimatedMinutes * (1 - t.progressPct / 100));
+
+      // 期限までの残り日数
+      let daysUntilDeadline: number | null = null;
+      if (t.deadline) {
+        const dl = new Date(t.deadline);
+        dl.setHours(0, 0, 0, 0);
+        const today = new Date(targetDate);
+        today.setHours(0, 0, 0, 0);
+        daysUntilDeadline = Math.ceil((dl.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      }
+
+      // 1日あたりの目安時間（残り日数がある場合のみ計算）
+      const dailySuggestion = daysUntilDeadline !== null && daysUntilDeadline > 0
+        ? Math.round(remainingMinutes / daysUntilDeadline)
+        : remainingMinutes; // 今日が期限 or 期限なし → 残り全部が今日の目安
+
       const lines = [
         `${i + 1}. 【${t.title}】（タスクID: ${t.id}）`,
         `   - 優先度: ${priority}`,
         `   - ステータス: ${status}`,
-        `   - 推定所要時間: ${t.estimatedMinutes}分`,
+        `   - 合計作業時間: ${t.estimatedMinutes}分（期限までの総作業量）`,
         `   - 現在の進捗: ${t.progressPct}%`,
+        `   - 残り作業時間: ${remainingMinutes}分`,
         `   - 期限: ${deadlineStr}`,
-      ];
+        daysUntilDeadline !== null
+          ? `   - 期限まで残り: ${daysUntilDeadline}日`
+          : null,
+        `   - 今日の推奨配分: ${dailySuggestion}分（残り${remainingMinutes}分 ÷ 残り${daysUntilDeadline ?? 1}日）`,
+      ].filter(Boolean);
 
       if (t.description) {
         lines.push(`   - メモ: ${t.description}`);
@@ -270,10 +293,10 @@ ${recurringSection}${logsSection}
 【スケジュール作成のルール】
 - 空き時間の範囲内でのみスケジュールを組むこと（既存予定と絶対に重複させないこと）
 - 集中タイムがある場合は、その時間帯に最重要タスクを入れること
-- 過去の実績から所要時間が多い傾向があれば、推定時間より余裕を持たせること
-- タスクの期限と現在の進捗率から逆算して、期限に間に合うよう今日の割り当て時間を調整すること
-  （例：期限が3日後・進捗30%なら残り70%を3日で割ると今日は約23%分が目安。
-   進捗が遅れていれば多めに、余裕があれば少なめに今日の配分を調整する）
+- 「合計作業時間」は期限までの総作業量であり、1日で全て終わらせる必要はない。
+  「今日の推奨配分」を参考に、今日スケジュールする時間を決めること
+  （進捗が遅れていれば推奨より多めに、余裕があれば少なめに調整する）
+- 過去の実績から所要時間が多い傾向があれば、今日の配分にも余裕を持たせること
 - すべてのタスクが空き時間に収まらない場合は、期限が近くかつ進捗が遅れているタスクを優先して残りは省くこと
 - タスクとタスクの間に10〜15分の余白を設けること（脳の切り替え時間）
 - 定期タスクは希望時間帯を最優先にして配置すること（希望時間帯に空きがない場合のみ別の時間帯に配置する）
