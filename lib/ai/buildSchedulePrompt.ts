@@ -28,13 +28,14 @@ interface BuildPromptOptions {
 }
 
 /**
- * Date オブジェクトを "HH:MM" 形式の文字列に変換する
+ * Date オブジェクトを JST の "HH:MM" 形式の文字列に変換する
  */
 function toHHMM(date: Date): string {
   return date.toLocaleTimeString("ja-JP", {
-    hour:   "2-digit",
-    minute: "2-digit",
-    hour12: false,
+    hour:     "2-digit",
+    minute:   "2-digit",
+    hour12:   false,
+    timeZone: "Asia/Tokyo",
   });
 }
 
@@ -51,12 +52,13 @@ export function buildSchedulePrompt({
   timedEvents = [],
 }: BuildPromptOptions): string {
 
-  // ── 今日の日付（曜日付き日本語形式）──
+  // ── 今日の日付（曜日付き日本語形式・JST）──
   const dateStr = targetDate.toLocaleDateString("ja-JP", {
-    year:    "numeric",
-    month:   "long",
-    day:     "numeric",
-    weekday: "long",
+    year:     "numeric",
+    month:    "long",
+    day:      "numeric",
+    weekday:  "long",
+    timeZone: "Asia/Tokyo",
   });
 
   // ── AIモードの説明文 ──

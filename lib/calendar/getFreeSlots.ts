@@ -28,13 +28,14 @@ interface Interval {
 
 /**
  * "HH:MM" 形式の文字列を、指定した日付のその時刻の Date オブジェクトに変換する
- * 例: parseTime(today, "07:30") → today の 07:30:00 を表す Date
+ * 例: parseTime(today, "07:30") → today の JST 07:30:00 を表す Date
+ *
+ * setHours() はサーバーのローカル時間（Vercel は UTC）で動作するため使わない。
+ * 日付を JST の "YYYY-MM-DD" 文字列に変換してから "+09:00" オフセットで Date を作る。
  */
 function parseTime(date: Date, hhmm: string): Date {
-  const [hours, minutes] = hhmm.split(":").map(Number);
-  const result = new Date(date);
-  result.setHours(hours, minutes, 0, 0);
-  return result;
+  const jstDateStr = date.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+  return new Date(`${jstDateStr}T${hhmm}:00+09:00`);
 }
 
 /**

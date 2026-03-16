@@ -35,12 +35,12 @@ export async function getCalendarEvents(
 
   const calendar = google.calendar({ version: "v3", auth });
 
-  // 取得する日付の 00:00:00 ～ 23:59:59 の範囲を設定
-  const startOfDay = new Date(date);
-  startOfDay.setHours(0, 0, 0, 0);
-
-  const endOfDay = new Date(date);
-  endOfDay.setHours(23, 59, 59, 999);
+  // 取得する日付の 00:00:00 ～ 23:59:59 の範囲を JST で設定
+  // setHours() はサーバーのローカル時間（Vercel は UTC）を使うため、
+  // JST のオフセット（+09:00）を文字列で明示して Date を作る
+  const jstDateStr = date.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+  const startOfDay = new Date(`${jstDateStr}T00:00:00+09:00`);
+  const endOfDay   = new Date(`${jstDateStr}T23:59:59+09:00`);
 
   try {
     const response = await calendar.events.list({
