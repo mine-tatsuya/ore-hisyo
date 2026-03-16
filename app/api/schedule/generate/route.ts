@@ -246,7 +246,7 @@ export async function GET(req: NextRequest) {
 
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
   const model  = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-1.5-flash",
     // ツール定義を渡すことで Gemini が Function Calling を使えるようになる
     tools: [{ functionDeclarations: SCHEDULE_TOOL_DECLARATIONS as any }],
     generationConfig: {
