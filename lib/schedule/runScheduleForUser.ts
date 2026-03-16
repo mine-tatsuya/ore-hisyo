@@ -192,7 +192,7 @@ export async function runScheduleForUser(
 
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
   const model  = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: "gemini-2.0-flash",
     tools: [{ functionDeclarations: SCHEDULE_TOOL_DECLARATIONS as any }],
     generationConfig: { temperature: 0.7 },
   });
