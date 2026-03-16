@@ -191,7 +191,7 @@ export async function runScheduleForUser(
   );
 
   // ── Gemini API 呼び出し（フォールバック付き）──
-  const FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-3-flash", "gemini-2.5-flash-lite"];
+  const FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash-lite"];
 
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -249,8 +249,8 @@ export async function runScheduleForUser(
       break;
 
     } catch (err) {
-      if ((err as any).status === 429) {
-        console.warn(`[runScheduleForUser] ${modelName} quota exceeded (userId=${userId}), trying next model...`);
+      if ((err as any).status === 429 || (err as any).status === 404) {
+        console.warn(`[runScheduleForUser] ${modelName} unavailable (${(err as any).status}, userId=${userId}), trying next model...`);
         continue;
       }
       console.error(`[runScheduleForUser] Gemini API error (userId=${userId}):`, err);

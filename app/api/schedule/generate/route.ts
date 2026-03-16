@@ -248,7 +248,7 @@ export async function GET(req: NextRequest) {
   //
   // 各モデルのクォータは独立している（例: 2.5-flash が上限でも 3-flash は使える）
   // 429 エラーが返ったら次のモデルに切り替えて再試行する
-  const FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-3-flash", "gemini-2.5-flash-lite"];
+  const FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash-lite"];
 
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -306,9 +306,9 @@ export async function GET(req: NextRequest) {
       break; // 成功 → ループ終了
 
     } catch (error) {
-      // 429 = クォータ上限 → 次のモデルへ
-      if ((error as any).status === 429) {
-        console.warn(`[schedule/generate] ${modelName} quota exceeded, trying next model...`);
+      // 429 = クォータ上限、404 = モデル名不正 → どちらも次のモデルへ
+      if ((error as any).status === 429 || (error as any).status === 404) {
+        console.warn(`[schedule/generate] ${modelName} unavailable (${(error as any).status}), trying next model...`);
         continue;
       }
       // それ以外のエラーはすぐ返す
