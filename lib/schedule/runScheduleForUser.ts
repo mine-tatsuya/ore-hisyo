@@ -319,7 +319,13 @@ export async function runScheduleForUser(
 
   for (const item of scheduleData.schedule) {
     const startDt = toDateTime(dateStr, item.start);
-    const endDt   = toDateTime(dateStr, item.end);
+    let   endDt   = toDateTime(dateStr, item.end);
+
+    // end <= start の場合は日付をまたいでいる（例: start=23:30, end=00:30）
+    // end に1日加算して翌日の時刻として扱う
+    if (endDt <= startDt) {
+      endDt = new Date(endDt.getTime() + 24 * 60 * 60 * 1000);
+    }
 
     try {
       const event = await calendar.events.insert({

@@ -101,7 +101,13 @@ export async function POST(req: NextRequest) {
 
   for (const item of schedule) {
     const startDt = toDateTime(date, item.start);
-    const endDt   = toDateTime(date, item.end);
+    let   endDt   = toDateTime(date, item.end);
+
+    // end <= start の場合は日付をまたいでいる（例: start=23:30, end=00:30）
+    // end に1日加算して翌日の時刻として扱う
+    if (endDt <= startDt) {
+      endDt = new Date(endDt.getTime() + 24 * 60 * 60 * 1000);
+    }
 
     try {
       // ── Google Calendar に新しいイベントを作成 ──
