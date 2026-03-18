@@ -38,6 +38,34 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
+    // signIn コールバック: ログイン（再ログイン含む）のたびに呼ばれる
+    //
+    // 【なぜ必要か？】
+    // PrismaAdapter は初回ログイン時しか Account テーブルにトークンを書かない。
+    // 再ログインしても DB は古いトークンのまま残るため、
+    // セッションなしで動く Cron が invalid_grant エラーになってしまう。
+    // ここで明示的に DB を上書きすることで、常に最新トークンが Cron から使えるようになる。
+    async signIn({ user, account }) {
+      if (account && user.id && account.access_token) {
+        const updateData: Record<string, unknown> = {
+          access_token: account.access_token,
+          expires_at:   account.expires_at ?? null,
+          token_type:   account.token_type ?? null,
+          scope:        account.scope ?? null,
+          id_token:     account.id_token ?? null,
+        };
+        // refresh_token は Google が毎回返すとは限らないので、あるときだけ上書き
+        if (account.refresh_token) {
+          updateData.refresh_token = account.refresh_token;
+        }
+        await prisma.account.updateMany({
+          where: { userId: user.id, provider: account.provider },
+          data:  updateData,
+        });
+      }
+      return true;
+    },
+
     // jwt コールバック: JWTトークンを作るときに呼ばれる
     async jwt({ token, account }) {
       // 初回ログイン時だけ account に Google のトークンが入ってくる
