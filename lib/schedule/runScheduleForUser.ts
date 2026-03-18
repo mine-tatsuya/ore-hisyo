@@ -51,8 +51,9 @@ const scheduleResponseSchema = z.object({
 });
 
 // "2024-03-15" + "09:00" → Date オブジェクト（apply/route.ts と同じ）
+// +09:00 を明示して JST として解釈させる（省略すると Vercel=UTC 環境で9時間ずれる）
 function toDateTime(dateStr: string, timeStr: string): Date {
-  return new Date(`${dateStr}T${timeStr}:00`);
+  return new Date(`${dateStr}T${timeStr}:00+09:00`);
 }
 
 // ---- メイン関数 ----
