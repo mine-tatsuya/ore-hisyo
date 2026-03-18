@@ -128,7 +128,9 @@ export default function ScheduleTimeline({
       )}
 
       {/* タイムライン本体 */}
-      <div className="flex gap-3">
+      {/* overflow-x-auto: 画面幅が狭い場合に横スクロールで対応 */}
+      <div className="overflow-x-auto">
+      <div className="flex gap-3 min-w-[280px]">
 
         {/* 左側：時刻ラベル列 */}
         <div
@@ -227,6 +229,7 @@ export default function ScheduleTimeline({
             );
           })}
         </div>
+      </div>
       </div>
     </div>
   );

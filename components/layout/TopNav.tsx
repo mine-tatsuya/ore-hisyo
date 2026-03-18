@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
-import { LogOut } from "lucide-react";
+import { LogOut, Menu } from "lucide-react";
 
 // パス → ページタイトルの対応表
 const pageTitles: Record<string, { title: string; subtitle: string }> = {
@@ -31,9 +31,10 @@ interface TopNavProps {
     email?: string | null;
     image?: string | null;
   };
+  onMobileOpen?: () => void; // モバイル用ハンバーガーボタンのハンドラ
 }
 
-export default function TopNav({ user }: TopNavProps) {
+export default function TopNav({ user, onMobileOpen }: TopNavProps) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -71,14 +72,23 @@ export default function TopNav({ user }: TopNavProps) {
   }, []);
 
   return (
-    <header className="px-6 pt-6 pb-3 flex items-center justify-between">
+    <header className="px-4 md:px-6 pt-4 md:pt-6 pb-3 flex items-center justify-between gap-3">
+      {/* ハンバーガーボタン（モバイル専用・md以上で非表示） */}
+      <button
+        onClick={onMobileOpen}
+        className="md:hidden flex-shrink-0 p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
+        aria-label="メニューを開く"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
       {/* 左：ページタイトル */}
-      <div>
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+      <div className="flex-1 min-w-0">
+        <h1 className="text-lg md:text-xl font-bold text-slate-900 tracking-tight truncate">
           {title}
         </h1>
         {subtitle && (
-          <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>
+          <p className="text-xs text-slate-400 mt-0.5 hidden sm:block">{subtitle}</p>
         )}
       </div>
 

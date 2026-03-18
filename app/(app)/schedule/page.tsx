@@ -285,17 +285,19 @@ export default function SchedulePage() {
       {/* relative z-10: このカードのスタッキングコンテキストを timeline より上にする */}
       {/* → 内側のカレンダーポップアップが timeline カードの上に表示される */}
       <div className="relative z-10 bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-white/60">
-        <div className="flex items-center justify-between">
+        {/* モバイルでは縦積み、sm以上では横並び */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h1 className="text-sm font-bold text-slate-800">{pageTitle}</h1>
             <p className="text-[11px] text-slate-400 mt-0.5">
               タスクと空き時間をもとにAIが最適なスケジュールを提案します
             </p>
           </div>
+          {/* w-full sm:w-auto でモバイルのみ全幅ボタン */}
           <button
             onClick={generate}
             disabled={isLoading}
-            className="flex items-center gap-2 bg-[#0052FF] text-white text-xs font-medium px-4 py-2.5 rounded-xl hover:bg-blue-700 transition-all disabled:opacity-60 shadow-sm"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#0052FF] text-white text-xs font-medium px-4 py-2.5 rounded-xl hover:bg-blue-700 transition-all disabled:opacity-60 shadow-sm"
           >
             {isLoading
               ? <Loader2 className="w-4 h-4 animate-spin" />
