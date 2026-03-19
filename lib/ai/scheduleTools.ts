@@ -6,7 +6,7 @@
 //
 // 流れ:
 //   1. こちら → AI: プロンプト + 利用可能なツール一覧
-//   2. AI → こちら: 「getWeatherForecast(date="2024-03-15") を呼んで」
+//   2. AI → こちら: 「getWeatherForecast(dates=["2024-03-15"]) を呼んで」
 //   3. こちら: 実際に気象庁APIを呼んで結果を得る
 //   4. こちら → AI: ツールの実行結果
 //   5. AI → こちら: 最終的なスケジュール JSON
@@ -32,9 +32,10 @@ export const SCHEDULE_TOOL_DECLARATIONS = [
     name: "getCalendarEvents",
     description: `
       指定した日付範囲の Google カレンダーのイベントをすべて取得する。
-      「先週火曜日に掃除機をかけたか」「月曜日に授業があったか」など
-      過去・未来の特定日付の予定を確認したい場合に使用する。
-      天気に関係のない確認には必ずこちらを使うこと。
+      タスクのメモに「〇〇したか確認して」「〇〇があったか調べて」など、
+      過去または未来の特定期間の予定を確認したい場合にのみ使用する。
+      このツールは会話全体で1回だけ呼び出すこと。
+      複数の期間を確認したい場合は startDate と endDate をまとめて広く指定すること。
     `.trim(),
     parameters: {
       type: "OBJECT",
@@ -54,19 +55,23 @@ export const SCHEDULE_TOOL_DECLARATIONS = [
   {
     name: "getWeatherForecast",
     description: `
-      指定した日付の天気予報を取得する（気象庁データ、無料・APIキー不要）。
-      タスクのメモに天気に関する条件（雨・晴れ・曇りなど）が記載されている場合のみ使用する。
-      天気の言及がないタスクのためには呼ばないこと。
+      複数日付の天気予報をまとめて取得する（1回のAPIで複数日対応）。
+      タスクのメモに「雨なら〇〇する」「晴れの日に〇〇したい」など、
+      天気が判断に影響する場合にのみ使用する。
+      天気に関する記述が一切ないタスクのためには呼ばないこと。
+      このツールは会話全体で1回だけ呼び出すこと。
+      複数の日付が必要な場合は dates 配列にまとめて指定すること。
     `.trim(),
     parameters: {
       type: "OBJECT",
       properties: {
-        date: {
-          type:        "STRING",
-          description: "日付 YYYY-MM-DD 形式（例: 2024-03-15）",
+        dates: {
+          type:        "ARRAY",
+          items:       { type: "STRING" },
+          description: "天気予報を取得する日付の配列（YYYY-MM-DD形式）。例: [\"2026-03-20\", \"2026-03-21\"]",
         },
       },
-      required: ["date"],
+      required: ["dates"],
     },
   },
 ] as const;
@@ -75,7 +80,7 @@ export const SCHEDULE_TOOL_DECLARATIONS = [
 // 各ツールの引数と戻り値の型を定義する
 type ToolHandlers = {
   getCalendarEvents: (args: { startDate: string; endDate: string }) => Promise<unknown>;
-  getWeatherForecast: (args: { date: string }) => Promise<unknown>;
+  getWeatherForecast: (args: { dates: string[] }) => Promise<unknown>;
 };
 
 /**
@@ -105,18 +110,26 @@ export function createToolHandlers(
       return { events };
     },
 
-    // 天気予報取得ツール
-    getWeatherForecast: async ({ date }) => {
-      console.log(`[FunctionCall] getWeatherForecast(${date}) location=${location}`);
-      const result = await getWeatherForecast(date, location);
-      if (!result) {
-        // null の場合はエラーメッセージをオブジェクトで返す（AI が理解できる形）
+    // 天気予報取得ツール（複数日付まとめて取得）
+    getWeatherForecast: async ({ dates }) => {
+      console.log(`[FunctionCall] getWeatherForecast([${dates.join(", ")}]) location=${location}`);
+
+      if (!location) {
         return {
-          error: `居住地「${location}」の天気予報を取得できませんでした。` +
-                 `設定画面で都道府県名を正しく設定してください。`,
+          error: "居住地が設定されていません。設定画面で都道府県を選択してください。",
         };
       }
-      return result;
+
+      const forecasts = await getWeatherForecast(dates, location);
+
+      if (forecasts.length === 0) {
+        return {
+          error: `「${location}」の天気予報を取得できませんでした。指定した日付が3日以上先の可能性があります。`,
+        };
+      }
+
+      // Struct のトップレベルに配列を渡せないため { forecasts: [...] } でラップ
+      return { forecasts };
     },
   };
 }

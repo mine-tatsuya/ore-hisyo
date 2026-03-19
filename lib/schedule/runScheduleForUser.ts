@@ -239,6 +239,14 @@ export async function runScheduleForUser(
       }
 
       rawText = result.response.text().trim();
+
+      // Gemini がツール呼び出しを繰り返してテキストを返さなかった場合は次のモデルへ
+      // （5回ループ終了後もテキストなし = ループが抜けきれなかった状態）
+      if (!rawText) {
+        console.warn(`[runScheduleForUser] ${modelName} returned empty text (userId=${userId}), trying next model...`);
+        continue;
+      }
+
       if (rawText.startsWith("```")) {
         rawText = rawText
           .replace(/^```(?:json)?\n?/, "")

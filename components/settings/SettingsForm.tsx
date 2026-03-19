@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Check, Clock, Bot, CalendarClock, Info, MapPin } from "lucide-react";
+import { PREFECTURE_LIST } from "@/lib/constants/prefectures";
 
 // ---- バリデーションスキーマ（APIと同じ定義）----
 const formSchema = z.object({
@@ -25,7 +26,7 @@ const formSchema = z.object({
   aiPersonality:  z.enum(["STRICT", "BALANCED", "RELAXED"]),
   aiCustomPrompt:   z.string().max(500).optional(),
   calendarMode:     z.enum(["MANUAL", "AUTO"]),
-  location:         z.string().max(100),
+  location:         z.enum(PREFECTURE_LIST as unknown as [string, ...string[]]).or(z.literal("")),
   cronTime:         z.string().regex(/^\d{2}:00$/, "HH:00形式で入力してください"),
   cronTargetOffset: z.number().int().min(0).max(7),
 });
@@ -343,20 +344,23 @@ export default function SettingsForm({ initialSettings }: SettingsFormProps) {
         <SectionHeader
           icon={<MapPin className="w-4 h-4" />}
           title="居住地"
-          description="天気予報を取得する地域を設定します（都道府県名で入力）"
+          description="天気予報を取得する地域を設定します"
         />
         <div className="space-y-1.5">
           <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
             都道府県
           </Label>
-          <Input
-            type="text"
+          {/* ドロップダウン: 気象庁APIが対応する47都道府県のみ選択可能 */}
+          <select
             {...register("location")}
-            placeholder="例: 熊本県"
-            className="bg-slate-50 border-slate-200 text-sm max-w-xs"
-          />
+            className="bg-slate-50 border border-slate-200 text-sm rounded-md px-3 py-2 max-w-xs w-full focus:outline-none focus:ring-2 focus:ring-[#0052FF]/30 focus:border-[#0052FF]"
+          >
+            <option value="">選択してください</option>
+            {PREFECTURE_LIST.map((pref) => (
+              <option key={pref} value={pref}>{pref}</option>
+            ))}
+          </select>
           <p className="text-[11px] text-slate-400">
-            都道府県名で入力してください（例: 東京都、大阪府、熊本県）。
             天気条件付きタスクのスケジューリングに使用します。
           </p>
           {errors.location && (
